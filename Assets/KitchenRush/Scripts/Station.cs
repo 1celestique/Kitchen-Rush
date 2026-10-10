@@ -2,7 +2,7 @@ using UnityEngine;
 
 // ==========================================================
 // Station: أي طاولة تقدرين تحطين عليها شي وتاخذينه
-// الصندوق وسلة المهملات (وبكرة لوح التقطيع) مبنية عليها
+// الصندوق ولوح التقطيع والصحون والتسليم والزبالة كلها مبنية عليها
 // ==========================================================
 public class Station : MonoBehaviour
 {
@@ -25,8 +25,38 @@ public class Station : MonoBehaviour
         item = i;
         i.transform.SetParent(null);
         i.transform.rotation = Quaternion.identity;
-        i.transform.position = TopPoint() + Vector3.up * i.HalfHeight;
+        i.PlaceOn(TopPoint());
     }
+
+    // لما الطباخة شايلة شي والطاولة عليها شي: نحط المكوّن في الصحن
+    public virtual bool TryCombine(ChefController chef)
+    {
+        var h = chef.held;
+        if (h == null) return false;
+        string why;
+
+        var plateHere = item as Plate;
+        if (plateHere != null && !(h is Plate))
+        {
+            if (plateHere.TryAdd(h, out why)) { chef.Release(); return true; }
+            if (why != null) { KitchenHUD.Flash(why); return true; }
+            return false;
+        }
+
+        var held = h as Plate;
+        if (held != null && item != null && !(item is Plate))
+        {
+            if (held.TryAdd(item, out why)) { item = null; return true; }
+            if (why != null) KitchenHUD.Flash(why);
+            return true;
+        }
+        return false;
+    }
+
+    // لما تمسك Space قدام الطاولة (التقطيع)
+    public virtual void Work(ChefController chef, float dt) { }
+
+    public virtual string Hint(ChefController chef) { return null; }
 
     // سطح الطاولة من فوق
     public Vector3 TopPoint()

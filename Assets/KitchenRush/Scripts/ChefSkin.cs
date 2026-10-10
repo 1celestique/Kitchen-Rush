@@ -45,6 +45,7 @@ public class ChefSkin : MonoBehaviour
     public int current;
     public bool useSavedSkin = true;      // ياخذ السكن المحفوظ
     public bool pressKToChange = true;    // للتجربة
+    public bool recolor = true;           // يطفي لو الشخصية من Mixamo
 
     float showNameUntil;
 
@@ -63,7 +64,7 @@ public class ChefSkin : MonoBehaviour
     void Update()
     {
         var k = Keyboard.current;
-        if (pressKToChange && k != null && k.kKey.wasPressedThisFrame)
+        if (recolor && pressKToChange && k != null && k.kKey.wasPressedThisFrame)
         {
             current = (current + 1) % skins.Length;
             if (useSavedSkin) Selected = current;
@@ -74,6 +75,7 @@ public class ChefSkin : MonoBehaviour
 
     public void Apply(int index)
     {
+        if (!recolor) return;
         if (skins == null || skins.Length == 0) return;
         current = Mathf.Clamp(index, 0, skins.Length - 1);
         var s = skins[current];
@@ -98,6 +100,9 @@ public class ChefSkin : MonoBehaviour
 
     void OnGUI()
     {
+        // ما يطلع فوق كتاب الوصفات ولا شاشة النهاية
+        if (KitchenHUD.BookOpen) return;
+        if (OrderManager.Instance != null && OrderManager.Instance.ended) return;
         var cam = Camera.main;
         if (showName && cam != null && !string.IsNullOrEmpty(chefName))
         {

@@ -9,21 +9,67 @@ public enum Ingredient { Lettuce, Tomato, Meat, Bun, Potato, Cheese }
 public class KitchenItem : MonoBehaviour
 {
     public Ingredient ingredient;
-    public bool chopped;   // نستخدمها بكرة مع لوح التقطيع
+    public bool chopped;
     public bool cooked;
     public bool burnt;
 
-    // نص ارتفاع الشكل، عشان ينحط فوق الطاولة بالضبط
-    public float HalfHeight
+    public bool Choppable
+    {
+        get { return ingredient == Ingredient.Lettuce || ingredient == Ingredient.Tomato || ingredient == Ingredient.Potato || ingredient == Ingredient.Cheese; }
+    }
+
+    // جاهز ينحط في الصحن؟
+    public virtual bool Ready
     {
         get
         {
-            var rs = GetComponentsInChildren<Renderer>();
-            if (rs.Length == 0) return 0.15f;
-            var b = rs[0].bounds;
-            foreach (var r in rs) b.Encapsulate(r.bounds);
-            return b.extents.y;
+            if (burnt) return false;
+            switch (ingredient)
+            {
+                case Ingredient.Meat: return cooked;
+                case Ingredient.Bun: return true;
+                case Ingredient.Potato: return chopped && cooked;
+                default: return chopped;
+            }
         }
+    }
+
+    public bool GetBounds(out Bounds b)
+    {
+        b = new Bounds(transform.position, Vector3.zero);
+        var rs = GetComponentsInChildren<Renderer>();
+        if (rs.Length == 0) return false;
+        b = rs[0].bounds;
+        foreach (var r in rs) b.Encapsulate(r.bounds);
+        return true;
+    }
+
+    // يحطه بحيث قاعدته على النقطة
+    public void PlaceOn(Vector3 top)
+    {
+        transform.position = top;
+        Bounds b;
+        if (GetBounds(out b)) transform.position += Vector3.up * (top.y - b.min.y);
+    }
+
+    // يتقطع: الشكل يصير ثلاث قطع صغيرة
+    public void SetChopped()
+    {
+        if (chopped) return;
+        chopped = true;
+        if (transform.childCount == 0) return;
+        Transform v = transform.GetChild(0);
+        Vector3[] offs = { new Vector3(-0.09f, 0f, 0.02f), new Vector3(0.09f, 0f, 0.05f), new Vector3(0.01f, 0f, -0.09f) };
+        foreach (var o in offs)
+        {
+            var piece = Instantiate(v.gameObject, transform);
+            piece.name = "Piece";
+            piece.transform.localScale = v.localScale * 0.55f;
+            piece.transform.localRotation = Quaternion.Euler(Random.Range(-20f, 20f), Random.Range(0f, 360f), Random.Range(-20f, 20f));
+            piece.transform.localPosition = v.localPosition * 0.55f + o;
+        }
+        v.gameObject.SetActive(false);
+        Destroy(v.gameObject);
     }
 }
 
@@ -32,21 +78,11 @@ public static class ItemFactory
     // prefab: مجسم الأكل من Food Kit (لو موجود)، وإذا مو موجود يسوي شكل بسيط
     public static KitchenItem Create(Ingredient ing, Material mat, GameObject prefab = null)
     {
-        GameObject go;
+        var go = new GameObject("Item_" + ing);
+        GameObject model;
         if (prefab != null)
         {
-            go = new GameObject("Item_" + ing);
-            var model = Object.Instantiate(prefab);
-            foreach (var c in model.GetComponentsInChildren<Collider>()) { c.enabled = false; Object.Destroy(c); }
-            Bounds b;
-            if (GetBounds(model, out b))
-            {
-                float max = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
-                if (max > 0.0001f) model.transform.localScale *= 0.38f / max;
-                GetBounds(model, out b);
-                model.transform.position -= b.center;
-            }
-            model.transform.SetParent(go.transform, true);
+            model = Object.Instantiate(prefab);
         }
         else
         {
@@ -61,26 +97,25 @@ public static class ItemFactory
                 case Ingredient.Potato:  shape = PrimitiveType.Sphere;   size = new Vector3(0.30f, 0.24f, 0.40f); break;
                 case Ingredient.Cheese:  shape = PrimitiveType.Cube;     size = new Vector3(0.36f, 0.08f, 0.36f); break;
             }
-            go = GameObject.CreatePrimitive(shape);
-            go.name = "Item_" + ing;
-            var col = go.GetComponent<Collider>();
-            if (col != null) { col.enabled = false; Object.Destroy(col); }
-            go.transform.localScale = size;
-            if (mat != null) go.GetComponent<Renderer>().sharedMaterial = mat;
+            model = GameObject.CreatePrimitive(shape);
+            model.transform.localScale = size;
+            if (mat != null) model.GetComponent<Renderer>().sharedMaterial = mat;
         }
+        model.name = "Model";
+        foreach (var c in model.GetComponentsInChildren<Collider>()) { c.enabled = false; Object.Destroy(c); }
+        model.transform.SetParent(go.transform, true);
+        model.transform.position = Vector3.zero;
 
         var item = go.AddComponent<KitchenItem>();
         item.ingredient = ing;
-        return item;
-    }
 
-    static bool GetBounds(GameObject g, out Bounds b)
-    {
-        b = new Bounds(g.transform.position, Vector3.zero);
-        var rs = g.GetComponentsInChildren<Renderer>();
-        if (rs.Length == 0) return false;
-        b = rs[0].bounds;
-        foreach (var r in rs) b.Encapsulate(r.bounds);
-        return true;
+        Bounds b;
+        if (prefab != null && item.GetBounds(out b))
+        {
+            float max = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+            if (max > 0.0001f) model.transform.localScale *= 0.38f / max;
+        }
+        if (item.GetBounds(out b)) model.transform.position -= b.center - go.transform.position;
+        return item;
     }
 }

@@ -13,8 +13,21 @@ public class Crate : Station
 
     public override KitchenItem Take(ChefController chef)
     {
-        // لو أحد حاط شي فوق الصندوق ناخذه أول
         if (item != null) return base.Take(chef);
         return ItemFactory.Create(ingredient, itemMaterial, itemPrefab);
+    }
+
+    // لو شايلة صحن: المكوّن يروح في الصحن على طول (مثل الخبز)
+    public override bool TryCombine(ChefController chef)
+    {
+        if (item != null) return base.TryCombine(chef);
+        var plate = chef.held as Plate;
+        if (plate == null) return false;
+        var it = ItemFactory.Create(ingredient, itemMaterial, itemPrefab);
+        string why;
+        if (plate.TryAdd(it, out why)) return true;
+        Destroy(it.gameObject);
+        if (why != null) KitchenHUD.Flash(why);
+        return true;
     }
 }

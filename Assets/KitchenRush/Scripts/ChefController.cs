@@ -5,6 +5,7 @@ using UnityEngine.InputSystem;
 // ==========================================================
 // ChefController: الطباخة
 // WASD حركة، Shift اندفاع، E تاخذ أو تحط على الطاولة اللي قدامها
+// Space تقطّع، والتلميح يطلع فوقها
 // v2: حركة ناعمة (تسارع وتباطؤ)، لفة ناعمة، ورجلين ويدين تتحرك
 //     وهي تمشي، ونطة خفيفة، وانضغاط مع الاندفاع، ويدينها لقدام لما تشيل شي
 // isActive نستخدمه بعدين للتبديل بين الطباختين بزر Tab
@@ -30,6 +31,7 @@ public class ChefController : MonoBehaviour
 
     [Header("الأنيميشن")]
     public bool animateBody = true;
+    public float walkAnimSpeed = 1.8f;   // سرعة حركة المشي الأصلية (للشخصية الحقيقية)
     public float stepSpeed = 12f;        // سرعة الخطوات
     public float legSwing = 35f;
     public float bobHeight = 0.07f;
@@ -39,9 +41,15 @@ public class ChefController : MonoBehaviour
     public KitchenItem held;
 
     CharacterController cc;
-    float dashT, cooldownT, vy, walkPhase, squash;
+    float dashT, cooldownT, vy, walkPhase, squash, workT;
     Vector3 dashDir, moveVel;
     Transform visual, legL, legR, armL, armR;
+    Animator anim;
+    Transform footL, footR, modelRoot;
+    public float footHeight = 0.08f;     // ارتفاع كاحل الشخصية عن الأرض
+    bool hasSpeed, hasCarry, hasWork, hasFidget;
+    float standT;
+    public float fidgetAfter = 8f;      // كم ثانية واقفة قبل ما تسوي حركة الوقوف الكاملة
 
     void Awake()
     {
@@ -52,6 +60,27 @@ public class ChefController : MonoBehaviour
             hand.SetParent(transform, false);
             hand.localPosition = new Vector3(0f, 0.95f, 0.55f);
         }
+        // لو فيه شخصية حقيقية (Mixamo) نستخدم حركاتها بدل الحركة المصنوعة
+        anim = GetComponentInChildren<Animator>();
+        if (anim != null && anim.runtimeAnimatorController != null)
+        {
+            animateBody = false;
+            anim.applyRootMotion = false;
+            if (anim.isHuman)
+            {
+                footL = anim.GetBoneTransform(HumanBodyBones.LeftFoot);
+                footR = anim.GetBoneTransform(HumanBodyBones.RightFoot);
+                modelRoot = anim.transform;
+            }
+            foreach (var p in anim.parameters)
+            {
+                if (p.name == "Speed") hasSpeed = true;
+                if (p.name == "Carry") hasCarry = true;
+                if (p.name == "Work") hasWork = true;
+                if (p.name == "Fidget") hasFidget = true;
+            }
+        }
+        else anim = null;
         if (animateBody) SetupVisual();
     }
 
@@ -59,6 +88,7 @@ public class ChefController : MonoBehaviour
     {
         float dt = Time.deltaTime;
         var k = Keyboard.current;
+        if (OrderManager.Instance != null && OrderManager.Instance.ended) return;
         Vector3 input = Vector3.zero;
         if (isActive && k != null)
         {
@@ -107,7 +137,43 @@ public class ChefController : MonoBehaviour
 
         if (isActive && k != null && k.eKey.wasPressedThisFrame) Interact();
 
+        // التقطيع: امسكي Space وأنتي قدام اللوح ويدك فاضية
+        workT -= dt;
+        if (isActive)
+        {
+            var front = FindStation();
+            if (front != null && k != null && k.spaceKey.isPressed && held == null) front.Work(this, dt);
+            string hint = front != null ? front.Hint(this) : null;
+            if (hint != null && workT <= 0f) KitchenHUD.Hint(transform.position + Vector3.up * 2.5f, hint);
+        }
+
         if (animateBody) Animate(dt);
+        else if (anim != null)
+        {
+            Vector3 v = cc.velocity;
+            float t = Mathf.Clamp01(new Vector3(v.x, 0f, v.z).magnitude / speed);
+            if (hasSpeed) anim.SetFloat("Speed", t, 0.05f, dt);
+            // سرعة الخطوات تمشي مع سرعة الحركة عشان ما تزحلق
+            float hv = new Vector3(v.x, 0f, v.z).magnitude;
+            anim.speed = hv > 0.3f ? Mathf.Clamp(hv / walkAnimSpeed, 1f, 2.6f) : 1f;
+            if (hasCarry) anim.SetBool("Carry", held != null);
+            if (hasWork) anim.SetBool("Work", workT > 0f);
+            // لو وقفت فترة طويلة بدون شي في يدها: حركة الوقوف الكاملة مرة وحدة
+            if (hv < 0.1f && held == null && workT <= 0f) standT += dt; else standT = 0f;
+            if (hasFidget && standT > fidgetAfter) { anim.SetTrigger("Fidget"); standT = -6f; }
+        }
+    }
+
+    // رجول الشخصية دايم على الأرض (عشان ما تطير)
+    void LateUpdate()
+    {
+        if (modelRoot == null || footL == null || footR == null) return;
+        float lowest = Mathf.Min(footL.position.y, footR.position.y);
+        float target = transform.position.y + footHeight;
+        Vector3 lp = modelRoot.localPosition;
+        lp.y += (target - lowest) * 0.5f;
+        lp.y = Mathf.Clamp(lp.y, -1f, 1f);
+        modelRoot.localPosition = lp;
     }
 
     // ---------- الأنيميشن ----------
@@ -156,6 +222,7 @@ public class ChefController : MonoBehaviour
 
         // لما تشيل شي يدينها لقدام
         float armHold = held != null ? -75f : 0f;
+        if (workT > 0f) { armHold = -70f + Mathf.Sin(Time.time * 28f) * 30f; swing = 0f; }
         if (armL) armL.localRotation = Quaternion.Slerp(armL.localRotation, Quaternion.Euler(armHold - swing * 0.8f * (held != null ? 0.2f : 1f), 0f, 0f), 1f - Mathf.Exp(-20f * dt));
         if (armR) armR.localRotation = Quaternion.Slerp(armR.localRotation, Quaternion.Euler(armHold + swing * 0.8f * (held != null ? 0.2f : 1f), 0f, 0f), 1f - Mathf.Exp(-20f * dt));
 
@@ -198,13 +265,28 @@ public class ChefController : MonoBehaviour
                 if (it != null) Hold(it);
             }
         }
-        else if (s.CanPut(held))
+        else
         {
-            var it = held;
-            held = null;
-            s.Put(it);
+            if (s.TryCombine(this)) return;
+            if (s.CanPut(held))
+            {
+                var it = held;
+                held = null;
+                s.Put(it);
+            }
         }
     }
+
+    // الشي اللي في يدها راح (انحط في صحن أو انسلم)
+    public KitchenItem Release()
+    {
+        var i = held;
+        held = null;
+        return i;
+    }
+
+    // تنادى من لوح التقطيع عشان يدينها تتحرك
+    public void MarkWorking() { workT = 0.1f; }
 
     public void Hold(KitchenItem it)
     {
