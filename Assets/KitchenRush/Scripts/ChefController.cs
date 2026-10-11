@@ -89,6 +89,7 @@ public class ChefController : MonoBehaviour
         float dt = Time.deltaTime;
         var k = Keyboard.current;
         if (OrderManager.Instance != null && OrderManager.Instance.ended) return;
+        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen) return;
         Vector3 input = Vector3.zero;
         if (isActive && k != null)
         {
@@ -262,17 +263,18 @@ public class ChefController : MonoBehaviour
             if (s.CanTake(this))
             {
                 var it = s.Take(this);
-                if (it != null) Hold(it);
+                if (it != null) { Hold(it); KitchenAudio.Play("pickup"); }
             }
         }
         else
         {
-            if (s.TryCombine(this)) return;
+            if (s.TryCombine(this)) { KitchenAudio.Play("click"); return; }
             if (s.CanPut(held))
             {
                 var it = held;
                 held = null;
                 s.Put(it);
+                if (!(s is Grill) && !(s is Trash)) KitchenAudio.Play("drop");
             }
         }
     }

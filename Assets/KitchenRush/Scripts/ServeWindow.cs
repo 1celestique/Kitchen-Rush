@@ -22,7 +22,7 @@ public class ServeWindow : Station
             chef.Release();
             Destroy(p.gameObject);
         }
-        else KitchenHUD.Flash("No order wants this");
+        else { KitchenHUD.Flash("No order wants this"); KitchenAudio.Play("wrong"); }
         return true;
     }
 

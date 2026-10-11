@@ -39,10 +39,426 @@ public static class KitchenBuilder
     };
 
     [MenuItem("Tools/Kitchen Rush/Build Level 1 Kitchen %#k")]
-    static void BuildLevel1() { serveAtTable = true; Build("Kitchen_Level1", Level1); }
+    static void BuildLevel1() { serveAtTable = true; outdoor = false; Build("Kitchen_Level1", Level1); }
+
+    // المرحلة ٢: حفلة في الحوش، فيها شواية (GR) للحم
+    static readonly string[] Level2 =
+    {
+        "## M  B  ## GR GR ## PL ## ##",
+        ".. .. .. .. .. .. .. .. .. ..",
+        ".. .. .. .. CF .. .. .. .. ..",
+        ".. .. .. .. .. .. .. .. .. ..",
+        "## L  T  C  CH CH ## ## TR ##",
+    };
 
     // المرحلة ١ (بيت نينا): التسليم يكون للأم على طاولة الأكل
     static bool serveAtTable;
+    // المرحلة ٢: برا البيت (عشب وسور وأضواء)
+    static bool outdoor;
+
+    // ---------- المشاهد: القائمة + المرحلة ٢ + Build Settings ----------
+    const string SceneFolder = "Assets/Scenes";
+
+    // يسوي مشهد القائمة ومشهد المرحلة ٢، ويرتب Build Settings (القائمة، ١، ٢)
+    // مشهد المرحلة ١ حقك ما يتغير
+    [MenuItem("Tools/Kitchen Rush/Build Whole Game (Menu, Intro, Levels) %#g")]
+    static void BuildGame()
+    {
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        string back = SceneManager.GetActiveScene().path;
+        string l1 = FindScene("level1");
+        if (l1 != null)
+        {
+            EditorSceneManager.OpenScene(l1, OpenSceneMode.Single);
+            BuildLevel1();
+            EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+        }
+        BuildLevel2Scene();
+        BuildIntroScene();
+        BuildMenuScene();
+        SetupBuildSettings();
+        if (!string.IsNullOrEmpty(back) && File.Exists(back)) EditorSceneManager.OpenScene(back, OpenSceneMode.Single);
+        Debug.Log("Kitchen Rush: MainMenu + Intro + level1 + level2 built. Build Settings: MainMenu, Intro, level1, level2. Press Play in MainMenu to test.");
+    }
+
+    [MenuItem("Tools/Kitchen Rush/Build Level 2 Backyard")]
+    static void BuildLevel2Menu()
+    {
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        BuildLevel2Scene();
+        SetupBuildSettings();
+    }
+
+    static void BuildLevel2Scene()
+    {
+        OpenOrNewScene("level2");
+        serveAtTable = true;
+        outdoor = true;
+        Build("Backyard_Level2", Level2);
+        outdoor = false;
+        EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+    }
+
+    static Scene OpenOrNewScene(string name)
+    {
+        if (!AssetDatabase.IsValidFolder(SceneFolder)) AssetDatabase.CreateFolder("Assets", "Scenes");
+        string path = SceneFolder + "/" + name + ".unity";
+        if (File.Exists(path)) return EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+        var sc = EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        EditorSceneManager.SaveScene(sc, path);
+        return sc;
+    }
+
+    static string FindScene(string name)
+    {
+        foreach (var guid in AssetDatabase.FindAssets("t:Scene " + name))
+        {
+            string p = AssetDatabase.GUIDToAssetPath(guid);
+            if (Path.GetFileNameWithoutExtension(p).ToLower() == name.ToLower()) return p;
+        }
+        return null;
+    }
+
+    static void SetupBuildSettings()
+    {
+        var list = new List<EditorBuildSettingsScene>();
+        foreach (var n in new[] { "MainMenu", "Intro", "level1", "level2" })
+        {
+            string p = FindScene(n);
+            if (p != null) list.Add(new EditorBuildSettingsScene(p, true));
+        }
+        EditorBuildSettings.scenes = list.ToArray();
+    }
+
+    // ---------- البداية: نينا في الصالة تشرب قهوة وترسم مطعمها، وأمها تناديها ----------
+    static void BuildIntroScene()
+    {
+        OpenOrNewScene("Intro");
+        ConvertPinkMaterials();
+        FindAllModels();
+        report.Clear();
+        foreach (var nm in new[] { "Intro_Set", "Chef" })
+        {
+            var old = GameObject.Find(nm);
+            if (old != null) Object.DestroyImmediate(old);
+        }
+        var root = new GameObject("Intro_Set");
+        var t = root.transform;
+
+        // الغرفة
+        Block(root, "Floor", new Vector3(0f, -0.1f, 0f), new Vector3(9f, 0.2f, 7f), TexMat("Floor_Wood_Intro", "FloorWood", WoodTex(), new Vector2(2.5f, 3.5f)), true);
+        var paint = Mat("Living_Wall", new Color(0.72f, 0.82f, 0.78f));
+        Block(root, "Wall_Back", new Vector3(0f, 1.5f, 2.3f), new Vector3(9f, 3f, 0.2f), paint, false);
+        Block(root, "Wall_Left", new Vector3(-3.6f, 1.5f, 0f), new Vector3(0.2f, 3f, 7f), paint, false);
+        Block(root, "Wall_Right", new Vector3(3.6f, 1.5f, 0f), new Vector3(0.2f, 3f, 7f), paint, false);
+        var trim = Mat("Wall_Trim", new Color(0.9f, 0.86f, 0.78f));
+        Block(root, "Skirting", new Vector3(0f, 0.06f, 2.19f), new Vector3(9f, 0.12f, 0.04f), trim, false);
+        BuildWindow(root, new Vector3(-1.6f, 1.2f, 2.2f));
+        // باب المطبخ (منوّر) يمين
+        Block(root, "Kitchen_Door_Glow", new Vector3(2.5f, 1.05f, 2.19f), new Vector3(1.0f, 2.1f, 0.02f), MatGlow("Kitchen_Glow", new Color(1f, 0.82f, 0.55f), 1.4f), false);
+        Block(root, "Door_Frame_L", new Vector3(1.97f, 1.05f, 2.17f), new Vector3(0.07f, 2.15f, 0.07f), trim, false);
+        Block(root, "Door_Frame_R", new Vector3(3.03f, 1.05f, 2.17f), new Vector3(0.07f, 2.15f, 0.07f), trim, false);
+        Block(root, "Door_Frame_T", new Vector3(2.5f, 2.13f, 2.17f), new Vector3(1.13f, 0.07f, 0.07f), trim, false);
+        var dl = new GameObject("Kitchen_Light").AddComponent<Light>();
+        dl.transform.SetParent(t); dl.transform.position = new Vector3(2.5f, 1.4f, 1.8f);
+        dl.type = LightType.Point; dl.color = new Color(1f, 0.8f, 0.55f); dl.range = 3.5f; dl.intensity = 2f;
+
+        // لوحات ومراية على الجدار
+        ArtFrame(t, new Vector3(0.0f, 1.75f, 2.19f), 0f, 0);
+        ArtFrame(t, new Vector3(0.75f, 1.6f, 2.19f), 0f, 2);
+        WavyMirror(t, new Vector3(3.49f, 1.6f, 0.3f));
+
+        // سجادة
+        var rug = Part(root, PrimitiveType.Cylinder, new Vector3(0.2f, 0.005f, 0.6f), new Vector3(3.2f, 0.005f, 2.3f), TexMat("Rug_Living", "RugChecker", CheckerSmallTex(new Color(0.95f, 0.7f, 0.6f)), new Vector2(6f, 5f)));
+        rug.name = "Rug";
+
+        // كنبة زرقا
+        var sofa = new GameObject("Sofa");
+        sofa.transform.SetParent(t);
+        sofa.transform.position = new Vector3(0.2f, 0f, 1.45f);
+        var blue = MatS("Sofa_Blue", DustyBlue, 0.15f);
+        var blueD = MatS("Sofa_BlueDark", new Color(0.45f, 0.6f, 0.76f), 0.15f);
+        Part(sofa, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(2.2f, 0.36f, 0.85f), blueD);
+        Part(sofa, PrimitiveType.Cube, new Vector3(-0.52f, 0.44f, -0.04f), new Vector3(1.02f, 0.1f, 0.74f), blue);
+        Part(sofa, PrimitiveType.Cube, new Vector3(0.52f, 0.44f, -0.04f), new Vector3(1.02f, 0.1f, 0.74f), blue);
+        Part(sofa, PrimitiveType.Cube, new Vector3(0f, 0.72f, 0.36f), new Vector3(2.2f, 0.62f, 0.18f), blueD);
+        Part(sofa, PrimitiveType.Cube, new Vector3(-1.1f, 0.5f, 0f), new Vector3(0.2f, 0.5f, 0.85f), blueD);
+        Part(sofa, PrimitiveType.Cube, new Vector3(1.1f, 0.5f, 0f), new Vector3(0.2f, 0.5f, 0.85f), blueD);
+        var pillow = Part(sofa, PrimitiveType.Cube, new Vector3(0.82f, 0.62f, 0.22f), new Vector3(0.36f, 0.32f, 0.12f), Mat("Pillow_Pink", new Color(1f, 0.62f, 0.7f)));
+        pillow.transform.localRotation = Quaternion.Euler(-12f, -15f, 8f);
+        var pillow2 = Part(sofa, PrimitiveType.Cube, new Vector3(-0.85f, 0.62f, 0.22f), new Vector3(0.36f, 0.32f, 0.12f), TexMat("Pillow_Floral", "Floral_0", FloralTex(0), Vector2.one));
+        pillow2.transform.localRotation = Quaternion.Euler(-12f, 12f, -6f);
+        for (int a = -1; a <= 1; a += 2)
+            for (int b = -1; b <= 1; b += 2)
+                Part(sofa, PrimitiveType.Cylinder, new Vector3(a * 1.0f, 0.02f, b * 0.33f), new Vector3(0.06f, 0.02f, 0.06f), Mat("Wood_Dark", new Color(0.4f, 0.28f, 0.18f)));
+
+        // طاولة قهوة عليها كراسة الرسم وقلم
+        var table = new GameObject("CoffeeTable");
+        table.transform.SetParent(t);
+        table.transform.position = new Vector3(0.2f, 0f, 0.35f);
+        var wood = MatS("Table_Wood", new Color(0.86f, 0.72f, 0.5f), 0.4f);
+        Part(table, PrimitiveType.Cube, new Vector3(0f, 0.4f, 0f), new Vector3(1.2f, 0.05f, 0.62f), wood);
+        for (int a = -1; a <= 1; a += 2)
+            for (int b = -1; b <= 1; b += 2)
+                Part(table, PrimitiveType.Cylinder, new Vector3(a * 0.52f, 0.19f, b * 0.24f), new Vector3(0.05f, 0.19f, 0.05f), wood);
+        var book = new GameObject("Sketchbook");
+        book.transform.SetParent(t);
+        book.transform.position = new Vector3(0.05f, 0.425f, 0.32f);
+        book.transform.rotation = Quaternion.Euler(0f, -8f, 0f);
+        Part(book, PrimitiveType.Cube, new Vector3(0f, 0.008f, 0f), new Vector3(0.46f, 0.016f, 0.34f), Mat("Book_Cover", new Color(0.32f, 0.45f, 0.62f)));
+        var page = GameObject.CreatePrimitive(PrimitiveType.Quad);
+        Object.DestroyImmediate(page.GetComponent<Collider>());
+        page.name = "Drawing";
+        page.transform.SetParent(book.transform, false);
+        page.transform.localPosition = new Vector3(0f, 0.0175f, 0f);
+        page.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        page.transform.localScale = new Vector3(0.44f, 0.32f, 1f);
+        var drawMat = TexMat("Drawing_Restaurant", "RestaurantSketch", RestaurantSketchTex(), Vector2.one);
+        if (drawMat.HasProperty("_Smoothness")) drawMat.SetFloat("_Smoothness", 0f);
+        page.GetComponent<Renderer>().sharedMaterial = drawMat;
+        var pencil = Part(book, PrimitiveType.Cylinder, new Vector3(0.3f, 0.02f, 0.05f), new Vector3(0.012f, 0.09f, 0.012f), Mat("Pencil", new Color(1f, 0.8f, 0.25f)));
+        pencil.transform.localRotation = Quaternion.Euler(90f, 30f, 0f);
+
+        // كرسي الجدة يسار، لمبة وكتب ونبتة يمين
+        var arm = new GameObject("Armchair");
+        arm.transform.SetParent(t);
+        arm.transform.position = new Vector3(-1.85f, 0f, 0.75f);
+        arm.transform.rotation = Quaternion.Euler(0f, 125f, 0f);
+        var mustard = MatS("Armchair_Mustard", new Color(0.93f, 0.72f, 0.33f), 0.15f);
+        Part(arm, PrimitiveType.Cube, new Vector3(0f, 0.24f, 0f), new Vector3(0.85f, 0.4f, 0.8f), mustard);
+        Part(arm, PrimitiveType.Cube, new Vector3(0f, 0.75f, 0.34f), new Vector3(0.85f, 0.65f, 0.14f), mustard);
+        Part(arm, PrimitiveType.Cube, new Vector3(-0.38f, 0.55f, 0f), new Vector3(0.12f, 0.3f, 0.8f), mustard);
+        Part(arm, PrimitiveType.Cube, new Vector3(0.38f, 0.55f, 0f), new Vector3(0.12f, 0.3f, 0.8f), mustard);
+        PlaceGuest(arm.transform, "granny", arm.transform.position + arm.transform.forward * -0.02f, 125f + 180f, 1.58f);
+
+        var lamp = new GameObject("FloorLamp");
+        lamp.transform.SetParent(t);
+        lamp.transform.position = new Vector3(-1.2f, 0f, 1.85f);
+        Part(lamp, PrimitiveType.Cylinder, new Vector3(0f, 0.02f, 0f), new Vector3(0.3f, 0.02f, 0.3f), Mat("Appliance_Dark", new Color(0.2f, 0.2f, 0.2f)));
+        Part(lamp, PrimitiveType.Cylinder, new Vector3(0f, 0.75f, 0f), new Vector3(0.025f, 0.75f, 0.025f), MatS("Brass", new Color(0.85f, 0.68f, 0.3f), 0.8f));
+        Part(lamp, PrimitiveType.Cylinder, new Vector3(0f, 1.55f, 0f), new Vector3(0.42f, 0.16f, 0.42f), MatGlow("Lamp_Shade", new Color(1f, 0.9f, 0.6f), 0.8f));
+        var ll = new GameObject("Lamp_Light").AddComponent<Light>();
+        ll.transform.SetParent(lamp.transform, false);
+        ll.transform.localPosition = new Vector3(0f, 1.4f, 0f);
+        ll.type = LightType.Point; ll.color = new Color(1f, 0.8f, 0.55f); ll.range = 4f; ll.intensity = 2.2f;
+        BigPlant(t, new Vector3(1.62f, 0f, 1.85f), 3);
+        BigPlant(t, new Vector3(-2.9f, 0f, 1.7f), 1);
+        CutePlant(t, new Vector3(-1.6f, 1.21f, 2.1f), 0.3f, 5);
+
+        // نينا جالسة على الكنبة، وفي يدها كوب قهوة
+        BuildChef(new Vector3(0.0f, 0f, 1.43f));
+        var chef = GameObject.Find("Chef");
+        if (chef != null)
+        {
+            ApplyCharacter(chef);
+            chef.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            var cc = chef.GetComponent<ChefController>(); if (cc != null) Object.DestroyImmediate(cc);
+            var ch = chef.GetComponent<CharacterController>(); if (ch != null) Object.DestroyImmediate(ch);
+            var sk = chef.GetComponent<ChefSkin>(); if (sk != null) { sk.showName = false; sk.accessories = false; }
+            var an = chef.GetComponentInChildren<Animator>();
+            var sitCtrl = SitController();
+            if (an != null && sitCtrl != null) an.runtimeAnimatorController = sitCtrl;
+            if (an != null && an.isHuman)
+            {
+                var hand = an.GetBoneTransform(HumanBodyBones.RightHand);
+                if (hand != null)
+                {
+                    var mug = new GameObject("Mug");
+                    mug.transform.position = hand.position + chef.transform.forward * 0.03f;
+                    mug.transform.rotation = chef.transform.rotation;
+                    Part(mug, PrimitiveType.Cylinder, Vector3.zero, new Vector3(0.075f, 0.05f, 0.075f), MatS("Mug_Pink", new Color(1f, 0.6f, 0.7f), 0.7f));
+                    Part(mug, PrimitiveType.Cylinder, new Vector3(0f, 0.048f, 0f), new Vector3(0.062f, 0.003f, 0.062f), Mat("Coffee", new Color(0.3f, 0.18f, 0.1f)));
+                    var handle = Part(mug, PrimitiveType.Cube, new Vector3(0.045f, 0f, 0f), new Vector3(0.015f, 0.05f, 0.03f), MatS("Mug_Pink", new Color(1f, 0.6f, 0.7f), 0.7f));
+                    handle.name = "Handle";
+                    mug.transform.SetParent(hand, true);
+                }
+            }
+        }
+
+        // الكاميرا والإضاءة
+        var cam = Camera.main;
+        if (cam == null)
+        {
+            var g = new GameObject("Main Camera");
+            g.tag = "MainCamera";
+            cam = g.AddComponent<Camera>();
+            g.AddComponent<AudioListener>();
+        }
+        var oldFollow = cam.GetComponent<KitchenCamera>();
+        if (oldFollow != null) Object.DestroyImmediate(oldFollow);
+        cam.transform.position = new Vector3(0.2f, 1.7f, -3.2f);
+        cam.transform.LookAt(new Vector3(0.1f, 0.8f, 1.2f));
+        cam.fieldOfView = 45f;
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.1f, 0.08f, 0.07f);
+        var data = cam.GetUniversalAdditionalCameraData();
+        if (data != null) { data.renderPostProcessing = true; data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing; }
+        SetupLights(root, 6, 4);
+        foreach (var l in Object.FindObjectsByType<Light>(FindObjectsSortMode.None))
+            if (l.type == LightType.Directional) { l.intensity = 1.3f; l.transform.rotation = Quaternion.Euler(35f, 200f, 0f); }
+        SetupPost(root);
+
+        var cut = new GameObject("Intro Cutscene").AddComponent<IntroCutscene>();
+        cut.transform.SetParent(t);
+        cut.nina = chef != null ? chef.transform : null;
+        cut.sketch = book.transform;
+        cut.door = new Vector3(2.5f, 1.2f, 2.2f);
+        var gran = GameObject.Find("Guest_granny");
+        cut.granny = gran != null ? gran.transform : arm.transform;
+        EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+        Debug.Log("Kitchen Rush: Intro built.\n" + string.Join("\n", report));
+    }
+
+    // رسمة المطعم في كراسة نينا (قلم رصاص + ألوان خفيفة)
+    static Texture2D RestaurantSketchTex()
+    {
+        int W = 512, H = 372;
+        var tex = new Texture2D(W, H);
+        var paper = new Color(0.99f, 0.97f, 0.92f);
+        var px = new Color[W * H];
+        for (int i = 0; i < px.Length; i++) px[i] = paper;
+        System.Action<int, int, Color> dot = (x, y, c) => { if (x >= 0 && x < W && y >= 0 && y < H) px[y * W + x] = c; };
+        System.Action<float, float, float, float, Color, int> line = (x0, y0, x1, y1, c, th) =>
+        {
+            int steps = Mathf.CeilToInt(Mathf.Max(Mathf.Abs(x1 - x0), Mathf.Abs(y1 - y0)));
+            for (int i = 0; i <= steps; i++)
+            {
+                float k = steps == 0 ? 0f : i / (float)steps;
+                int x = Mathf.RoundToInt(Mathf.Lerp(x0, x1, k)), y = Mathf.RoundToInt(Mathf.Lerp(y0, y1, k));
+                for (int a = -th; a <= th; a++) for (int b = -th; b <= th; b++) dot(x + a, y + b, c);
+            }
+        };
+        System.Action<int, int, int, int, Color> fill = (x0, y0, x1, y1, c) =>
+        {
+            for (int y = y0; y < y1; y++) for (int x = x0; x < x1; x++) dot(x, y, Color.Lerp(px[Mathf.Clamp(y, 0, H - 1) * W + Mathf.Clamp(x, 0, W - 1)], c, 0.55f));
+        };
+        var pen = new Color(0.25f, 0.25f, 0.3f);
+        var pink = new Color(1f, 0.55f, 0.65f);
+        var blue = new Color(0.5f, 0.7f, 0.9f);
+        var warm = new Color(1f, 0.85f, 0.45f);
+        // خطوط الكراسة
+        for (int y = 30; y < H; y += 26) line(0, y, W, y, new Color(0.85f, 0.9f, 0.97f), 0);
+        // المبنى
+        fill(110, 60, 400, 250, new Color(0.98f, 0.92f, 0.82f));
+        line(110, 60, 110, 250, pen, 1); line(400, 60, 400, 250, pen, 1); line(110, 250, 400, 250, pen, 1); line(105, 60, 405, 60, pen, 1);
+        // مظلة مخططة
+        for (int i = 0; i < 10; i++)
+        {
+            int x0 = 100 + i * 31;
+            fill(x0, 250, x0 + 31, 285, i % 2 == 0 ? pink : Color.white);
+            line(x0, 285, x0 + 15, 295, pen, 0); line(x0 + 15, 295, x0 + 31, 285, pen, 0);
+        }
+        line(100, 250, 410, 250, pen, 1); line(100, 285, 410, 285, pen, 0);
+        // اللوحة
+        fill(170, 296, 340, 340, blue);
+        line(170, 296, 340, 296, pen, 1); line(170, 340, 340, 340, pen, 1); line(170, 296, 170, 340, pen, 1); line(340, 296, 340, 340, pen, 1);
+        for (int i = 0; i < 6; i++) line(190 + i * 25, 310, 202 + i * 25, 328, Color.white, 1);
+        // الباب والشبابيك
+        fill(225, 60, 285, 175, new Color(0.85f, 0.55f, 0.4f));
+        line(225, 60, 225, 175, pen, 1); line(285, 60, 285, 175, pen, 1); line(225, 175, 285, 175, pen, 1);
+        foreach (int wx in new[] { 135, 310 })
+        {
+            fill(wx, 120, wx + 65, 200, warm);
+            line(wx, 120, wx + 65, 120, pen, 1); line(wx, 200, wx + 65, 200, pen, 1); line(wx, 120, wx, 200, pen, 1); line(wx + 65, 120, wx + 65, 200, pen, 1);
+            line(wx + 32, 120, wx + 32, 200, pen, 0); line(wx, 160, wx + 65, 160, pen, 0);
+        }
+        // نباتات وطاولة برا
+        for (int i = 0; i < 2; i++)
+        {
+            int cx = i == 0 ? 80 : 430;
+            fill(cx - 14, 60, cx + 14, 88, new Color(0.9f, 0.55f, 0.35f));
+            for (int a = 0; a < 360; a += 4) dot(cx + Mathf.RoundToInt(Mathf.Cos(a * Mathf.Deg2Rad) * 24), 112 + Mathf.RoundToInt(Mathf.Sin(a * Mathf.Deg2Rad) * 22), new Color(0.35f, 0.65f, 0.35f));
+            line(cx, 88, cx, 100, pen, 0);
+        }
+        // قلوب ونجوم صغيرة
+        foreach (var hpos in new[] { new Vector2(60, 300), new Vector2(450, 320), new Vector2(470, 200) })
+        {
+            for (int a = 0; a < 360; a += 3)
+            {
+                float r = a * Mathf.Deg2Rad;
+                float hx = 16f * Mathf.Pow(Mathf.Sin(r), 3), hy = 13f * Mathf.Cos(r) - 5f * Mathf.Cos(2 * r) - 2f * Mathf.Cos(3 * r) - Mathf.Cos(4 * r);
+                dot(Mathf.RoundToInt(hpos.x + hx * 0.7f), Mathf.RoundToInt(hpos.y + hy * 0.7f), pink);
+            }
+        }
+        tex.SetPixels(px);
+        tex.Apply();
+        return tex;
+    }
+
+    // القائمة: خلفية دافية ونينا واقفة يمين، والواجهة تنبني لحالها (MainMenu.cs)
+    static void BuildMenuScene()
+    {
+        OpenOrNewScene("MainMenu");
+        ConvertPinkMaterials();
+        FindAllModels();
+        var old = GameObject.Find("Menu_Set");
+        if (old != null) Object.DestroyImmediate(old);
+        var oldChef = GameObject.Find("Chef");
+        if (oldChef != null) Object.DestroyImmediate(oldChef);
+        var root = new GameObject("Menu_Set");
+
+        // أرضية خشب وجدار بلاط ورف عليه أغراض (نفس جو المطبخ)
+        var floor = Block(root, "Floor", new Vector3(0f, -0.1f, 0f), new Vector3(14f, 0.2f, 8f), TexMat("Floor_Wood_Menu", "FloorWood", WoodTex(), new Vector2(3.5f, 4f)), false);
+        Block(root, "Wall", new Vector3(0f, 2f, 2.2f), new Vector3(14f, 4.2f, 0.2f), Mat("Wall_Paint", Cream), false);
+        var tiles = Block(root, "Backsplash_Menu", new Vector3(0f, 1.35f, 2.09f), new Vector3(14f, 0.9f, 0.02f), TexMat("Backsplash", "PatchworkTiles_v2", PatchworkTex(), Vector2.one), false);
+        SetTiling(tiles, new Vector2(7f, 1f));
+        for (int i = 0; i < 6; i++)
+        {
+            float x = -1.2f + i * 0.85f;
+            var t = Tile(root, "Counter_Decor", new Vector3(x, 0f, 1.6f));
+            CounterBody(t, 0f, i % 2 == 0 ? CabinetWhite : DustyBlue, TopGrey);
+            Object.DestroyImmediate(t.GetComponent<Collider>());
+            Vector3 top = new Vector3(x, CounterH, 1.6f);
+            if (i == 1) Kettle(t.transform, top);
+            if (i == 3) CutePlant(t.transform, top, 0.45f, i);
+            if (i == 4) Toaster(t.transform, top);
+        }
+        Block(root, "Shelf", new Vector3(1.2f, 2.35f, 1.95f), new Vector3(3.2f, 0.05f, 0.3f), Mat("Shelf_Wood", ShelfWood), false);
+        for (int i = 0; i < 5; i++)
+        {
+            Vector3 p = new Vector3(-0.1f + i * 0.65f, 2.375f, 1.95f);
+            if (i % 2 == 0) DutchOven(root.transform, p, i); else CutePlant(root.transform, p, 0.4f, i);
+        }
+        BigPlant(root.transform, new Vector3(3.6f, 0f, 1.2f), 2);
+
+        // نينا
+        BuildChef(new Vector3(1.6f, 0.02f, 0f));
+        var chef = GameObject.Find("Chef");
+        if (chef != null)
+        {
+            ApplyCharacter(chef);
+            chef.transform.rotation = Quaternion.Euler(0f, 200f, 0f);
+            var cc = chef.GetComponent<ChefController>(); if (cc != null) Object.DestroyImmediate(cc);
+            var ch = chef.GetComponent<CharacterController>(); if (ch != null) Object.DestroyImmediate(ch);
+            var sk = chef.GetComponent<ChefSkin>(); if (sk != null) sk.showName = false;
+        }
+
+        // الكاميرا والإضاءة
+        var cam = Camera.main;
+        if (cam == null)
+        {
+            var g = new GameObject("Main Camera");
+            g.tag = "MainCamera";
+            cam = g.AddComponent<Camera>();
+            g.AddComponent<AudioListener>();
+        }
+        var oldFollow = cam.GetComponent<KitchenCamera>();
+        if (oldFollow != null) Object.DestroyImmediate(oldFollow);
+        cam.transform.position = new Vector3(0.4f, 1.55f, -3.6f);
+        cam.transform.rotation = Quaternion.Euler(8f, 0f, 0f);
+        cam.fieldOfView = 42f;
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.16f, 0.12f, 0.1f);
+        var data = cam.GetUniversalAdditionalCameraData();
+        if (data != null) { data.renderPostProcessing = true; data.antialiasing = AntialiasingMode.SubpixelMorphologicalAntiAliasing; }
+        SetupLights(root, 6, 4);
+        SetupPost(root);
+
+        var menu = new GameObject("Main Menu").AddComponent<MainMenu>();
+        menu.transform.SetParent(root.transform);
+        if (chef != null) menu.preview = chef.transform;
+        EditorSceneManager.SaveScene(SceneManager.GetActiveScene());
+    }
 
     // ---------- المجسمات اللي لقيناها ----------
     static GameObject mCounter, mSink, mTrash, mBoard, mKnife, mPlate, mPot, mPan, mFridge;
@@ -208,7 +624,7 @@ public static class KitchenBuilder
         foreach (var r in map) rows.Add(r.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries));
         int R = rows.Count, C = rows[0].Length;
 
-        BuildRoom(root, C, R);
+        if (outdoor) BuildYard(root, C, R); else BuildRoom(root, C, R);
 
         Vector3 chefPos = Vector3.zero;
         bool ovenDone = false;
@@ -224,7 +640,7 @@ public static class KitchenBuilder
                     case "##":
                         bool corner = (r == 0 || r == R - 1) && (c == 0 || c == C - 1);
                         if (corner) DecorCounter(root, pos, face, r * 7 + c);
-                        else Counter(root, "Counter", pos, face, r == 0 && !ovenDone && c > C / 2 && (ovenDone = true));
+                        else Counter(root, "Counter", pos, face, !outdoor && r == 0 && !ovenDone && c > C / 2 && (ovenDone = true));
                         break;
                     case "L": CrateTile(root, pos, face, Ingredient.Lettuce); break;
                     case "T": CrateTile(root, pos, face, Ingredient.Tomato); break;
@@ -233,6 +649,7 @@ public static class KitchenBuilder
                     case "P": CrateTile(root, pos, face, Ingredient.Potato); break;
                     case "C": CrateTile(root, pos, face, Ingredient.Cheese); break;
                     case "CH": ChopTile(root, pos, face); break;
+                    case "GR": GrillTile(root, pos, face); break;
                     case "PL": PlatesTile(root, pos, face); break;
                     case "SV": ServeTile(root, pos); break;
                     case "TR": TrashTile(root, pos, face); break;
@@ -479,12 +896,41 @@ public static class KitchenBuilder
         var g = new GameObject("Level Manager");
         g.transform.SetParent(root.transform);
         var om = g.AddComponent<OrderManager>();
+        if (outdoor)
+        {
+            // المرحلة ٢: حفلة الحوش، برقر على الشواية
+            om.levelTitle = "LEVEL 2 · BACKYARD PARTY";
+            om.levelTime = 210f;
+            om.maxOrders = 2;
+            om.patience = 85f;
+            om.starScores = new[] { 100, 180, 260 };
+            om.salad = true;
+            om.cheeseSalad = false;
+            om.sandwich = false;
+            om.burger = true;
+            om.cheeseburger = true;
+            om.chapterLabel = "CHAPTER 2";
+            om.chapterTitle = "Backyard Party";
+            om.chapterText = "Mom loved dinner so much that she told the whole neighborhood!\nNow everyone is coming to a party in the backyard,\nand they all want burgers. Time to fire up the grill!";
+            om.introCaptions = new[]
+            {
+                "Wow... the whole neighborhood is here!",
+                "Burgers need grilled meat. I can't let it burn!",
+                "Tip: Put raw meat on the grill. Take it off when it turns brown, before the red bar fills!",
+            };
+            om.firstServeLine = "They love the burgers!";
+            om.missedLine = "Oh no... a guest left hungry.";
+            om.hurryLine = "The party is almost over, hurry!";
+            return;
+        }
         om.levelTitle = "LEVEL 1 · NINA'S KITCHEN";
         om.levelTime = 180f;
-        om.patience = 60f;
-        om.maxOrders = 2;
-        om.patience = 75f;
-        om.starScores = new[] { 80, 140, 200 };
+        // أول مرحلة هادية: طلب واحد بس بالمرة، وصبر أطول، والطلب الجاي يتأخر شوي
+        om.maxOrders = 1;
+        om.patience = 95f;
+        om.firstOrderDelay = 2f;
+        om.nextOrderDelay = 6f;
+        om.starScores = new[] { 50, 90, 130 };
         om.salad = true;
         om.cheeseSalad = true;
         om.sandwich = true;
@@ -852,7 +1298,7 @@ public static class KitchenBuilder
     }
 
     // الأم: شخصية Mixamo جالسة (لو موجودة في Character باسم Mom)
-    static void PlaceMom(Transform parent, Vector3 seatFloor)
+    static GameObject PlaceMom(Transform parent, Vector3 seatFloor)
     {
         // Mom.fbx = الشخصية (With Skin)، Mom@Sitting.fbx = حركة الجلوس
         var momFiles = new List<string>();
@@ -861,7 +1307,7 @@ public static class KitchenBuilder
             string pth = AssetDatabase.GUIDToAssetPath(guid);
             if (Norm(pth).StartsWith("mom") && !momFiles.Contains(pth)) momFiles.Add(pth);
         }
-        if (momFiles.Count == 0) { report.Add("Mom: not found (put Mom.fbx + Mom@Sitting.fbx in " + CharFolder + ")"); return; }
+        if (momFiles.Count == 0) { report.Add("Mom: not found (put Mom.fbx + Mom@Sitting.fbx in " + CharFolder + ")"); return null; }
 
         string model = null, sit = null;
         foreach (var pth in momFiles)
@@ -891,7 +1337,7 @@ public static class KitchenBuilder
             var go = AssetDatabase.LoadAssetAtPath<GameObject>(pth);
             if (model == null && go != null && go.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length > 0) model = pth;
         }
-        if (model == null) { report.Add("Mom: no character mesh found"); return; }
+        if (model == null) { report.Add("Mom: no character mesh found"); return null; }
 
         string ctrlPath = CharFolder + "/MomAnimator.controller";
         AssetDatabase.DeleteAsset(ctrlPath);
@@ -918,7 +1364,132 @@ public static class KitchenBuilder
         an.runtimeAnimatorController = ctrl;
         an.applyRootMotion = false;
         an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        PersonMaterials(m, model);
         report.Add("Mom: " + model + (sit != null ? " + " + sit : ""));
+        return m;
+    }
+
+    // ---------- شخصيات جانبية (الجدة والضيوف) ----------
+    // حطي ملفاتهم في Assets/KitchenRush/People (Granny.fbx, Aj.fbx ...)
+    // كلهم يجلسون بنفس حركة جلوس الأم
+    const string PeopleFolder = "Assets/KitchenRush/People";
+
+    static GameObject PlaceGuest(Transform parent, string key, Vector3 seatFloor, float yaw, float height = 1.62f)
+    {
+        if (!AssetDatabase.IsValidFolder(PeopleFolder)) { report.Add("Guest " + key + ": no People folder"); return null; }
+        string model = null;
+        foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { PeopleFolder }))
+        {
+            string pth = AssetDatabase.GUIDToAssetPath(guid);
+            if (Norm(pth).Contains(key.ToLower())) { model = pth; break; }
+        }
+        if (model == null) { report.Add("Guest " + key + ": not found"); return null; }
+        var imp = AssetImporter.GetAtPath(model) as ModelImporter;
+        if (imp != null && imp.animationType != ModelImporterAnimationType.Human) { imp.animationType = ModelImporterAnimationType.Human; imp.SaveAndReimport(); }
+        var ctrl = SitController();
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(model);
+        if (prefab == null) return null;
+        var m = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+        m.name = "Guest_" + key;
+        m.transform.SetParent(parent, true);
+        m.transform.position = seatFloor;
+        m.transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+        foreach (var col in m.GetComponentsInChildren<Collider>()) Object.DestroyImmediate(col);
+        Bounds bb;
+        if (GetBounds(m, out bb) && bb.size.y > 0.01f)
+        {
+            m.transform.localScale *= height / bb.size.y;
+            GetBounds(m, out bb);
+            m.transform.position += Vector3.up * (seatFloor.y - bb.min.y);
+        }
+        var an = m.GetComponent<Animator>();
+        if (an == null) an = m.AddComponent<Animator>();
+        an.runtimeAnimatorController = ctrl;
+        an.applyRootMotion = false;
+        an.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        PersonMaterials(m, model);
+        report.Add("Guest " + key + ": " + model);
+        return m;
+    }
+
+    // حركة الجلوس (من Mom@Sitting) لأي شخصية
+    static RuntimeAnimatorController SitController()
+    {
+        string path = CharFolder + "/SitAnimator.controller";
+        var have = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(path);
+        if (have != null) return have;
+        string sit = null;
+        foreach (var guid in AssetDatabase.FindAssets("t:Model", new[] { CharFolder }))
+        {
+            string pth = AssetDatabase.GUIDToAssetPath(guid);
+            if (Norm(pth).Contains("sit")) { sit = pth; break; }
+        }
+        if (sit == null) return null;
+        var imp = AssetImporter.GetAtPath(sit) as ModelImporter;
+        if (imp != null)
+        {
+            bool need = imp.animationType != ModelImporterAnimationType.Human;
+            imp.animationType = ModelImporterAnimationType.Human;
+            var clips = imp.clipAnimations.Length > 0 ? imp.clipAnimations : imp.defaultClipAnimations;
+            if (imp.clipAnimations.Length == 0) need = true;
+            foreach (var c in clips)
+            {
+                c.loopTime = true; c.lockRootRotation = true; c.lockRootHeightY = true; c.lockRootPositionXZ = false;
+                c.keepOriginalOrientation = true; c.keepOriginalPositionY = true; c.keepOriginalPositionXZ = true;
+            }
+            if (need && clips.Length > 0) { imp.clipAnimations = clips; imp.SaveAndReimport(); }
+        }
+        var ctrl = AnimatorController.CreateAnimatorControllerAtPath(path);
+        var st = ctrl.layers[0].stateMachine.AddState("Sit");
+        st.motion = Clip(sit);
+        AssetDatabase.SaveAssets();
+        return ctrl;
+    }
+
+    // صور الشخصية داخل ملف الـ FBX: نطلعها ونسوي مادة URP منها (عشان ما تطلع بيضا)
+    static void PersonMaterials(GameObject inst, string modelPath)
+    {
+        string key = Path.GetFileNameWithoutExtension(modelPath).Replace(" ", "_").Replace("@", "_");
+        string baseDir = Root + "/PeopleTex";
+        if (!AssetDatabase.IsValidFolder(baseDir)) AssetDatabase.CreateFolder(Root, "PeopleTex");
+        string dir = baseDir + "/" + key;
+        if (!AssetDatabase.IsValidFolder(dir))
+        {
+            AssetDatabase.CreateFolder(baseDir, key);
+            var imp = AssetImporter.GetAtPath(modelPath) as ModelImporter;
+            if (imp != null)
+            {
+                try { imp.ExtractTextures(dir); } catch (System.Exception e) { Debug.LogWarning("Kitchen Rush: textures " + key + ": " + e.Message); }
+                AssetDatabase.Refresh();
+            }
+        }
+        Texture2D diff = null, nrm = null;
+        string nrmPath = null;
+        foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { dir }))
+        {
+            string pth = AssetDatabase.GUIDToAssetPath(guid);
+            string n = Norm(pth);
+            if (diff == null && (n.Contains("diffuse") || n.Contains("albedo") || n.Contains("basecolor"))) diff = AssetDatabase.LoadAssetAtPath<Texture2D>(pth);
+            else if (nrm == null && n.Contains("normal")) { nrm = AssetDatabase.LoadAssetAtPath<Texture2D>(pth); nrmPath = pth; }
+        }
+        if (diff == null) return;
+        if (nrmPath != null)
+        {
+            var ti = AssetImporter.GetAtPath(nrmPath) as TextureImporter;
+            if (ti != null && ti.textureType != TextureImporterType.NormalMap) { ti.textureType = TextureImporterType.NormalMap; ti.SaveAndReimport(); }
+        }
+        var mat = Mat("Person_" + key, Color.white);
+        if (mat.HasProperty("_BaseMap")) mat.SetTexture("_BaseMap", diff);
+        if (mat.HasProperty("_MainTex")) mat.SetTexture("_MainTex", diff);
+        if (nrm != null && mat.HasProperty("_BumpMap")) { mat.SetTexture("_BumpMap", nrm); mat.EnableKeyword("_NORMALMAP"); }
+        if (mat.HasProperty("_Smoothness")) mat.SetFloat("_Smoothness", 0.3f);
+        EditorUtility.SetDirty(mat);
+        foreach (var r in inst.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+        {
+            var arr = r.sharedMaterials;
+            for (int i = 0; i < arr.Length; i++) arr[i] = mat;
+            r.sharedMaterials = arr;
+        }
     }
 
     // لو الشخصية بيضا أو وردية: مادة URP بنفس اللون
@@ -1158,6 +1729,242 @@ public static class KitchenBuilder
         t.AddComponent<Trash>();
     }
 
+    // الشواية: صندوق ستيل أسود، فحم يتوهج، وشبك فوقه
+    static void GrillTile(GameObject root, Vector3 pos, float face)
+    {
+        var t = Tile(root, "Grill", pos);
+        var g = new GameObject("GrillBody");
+        g.transform.SetParent(t.transform, false);
+        g.transform.localRotation = Quaternion.Euler(0f, face, 0f);
+        var body = MatS("Grill_Black", new Color(0.12f, 0.12f, 0.13f), 0.6f);
+        var steel = MatS("Grill_Steel", new Color(0.7f, 0.72f, 0.75f), 0.8f);
+        var red = MatS("Grill_Red", new Color(0.82f, 0.25f, 0.2f), 0.55f);
+        Part(g, PrimitiveType.Cube, new Vector3(0f, 0.42f, 0f), new Vector3(0.96f, 0.84f, 0.94f), body);
+        Part(g, PrimitiveType.Cube, new Vector3(0f, 0.45f, 0.475f), new Vector3(0.8f, 0.5f, 0.02f), red).name = "Grill_Door";
+        Part(g, PrimitiveType.Cylinder, new Vector3(0f, 0.62f, 0.51f), new Vector3(0.025f, 0.28f, 0.025f), steel).transform.localRotation = Quaternion.Euler(0f, 0f, 90f);
+        for (int i = 0; i < 3; i++)
+            Part(g, PrimitiveType.Cylinder, new Vector3(-0.2f + i * 0.2f, 0.78f, 0.49f), new Vector3(0.06f, 0.015f, 0.06f), steel).transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
+        // الفحم
+        var coals = Part(g, PrimitiveType.Cube, new Vector3(0f, CounterH - 0.03f, 0f), new Vector3(0.82f, 0.04f, 0.8f), MatGlow("Grill_Coals", new Color(1f, 0.42f, 0.1f), 1.2f));
+        coals.name = "Coals";
+        // الشبك
+        for (int i = 0; i < 8; i++)
+            Part(g, PrimitiveType.Cube, new Vector3(-0.35f + i * 0.1f, CounterH + 0.005f, 0f), new Vector3(0.025f, 0.02f, 0.82f), steel);
+        Part(g, PrimitiveType.Cube, new Vector3(0f, CounterH + 0.01f, 0.43f), new Vector3(0.96f, 0.04f, 0.06f), body);
+        Part(g, PrimitiveType.Cube, new Vector3(0f, CounterH + 0.01f, -0.43f), new Vector3(0.96f, 0.04f, 0.06f), body);
+        var gr = t.AddComponent<Grill>();
+        gr.topExtra = 0.02f;
+        gr.coals = coals.GetComponent<Renderer>();
+    }
+
+    // ---------- الحوش (المرحلة ٢) ----------
+    static readonly Color Grass = new Color(0.45f, 0.68f, 0.32f);
+    static readonly Color HouseBlue = new Color(0.62f, 0.76f, 0.88f);
+
+    static void BuildYard(GameObject root, int C, int R)
+    {
+        float W = C + Side * 2f;
+        float z = R / 2f;
+
+        // عشب كبير، وأرضية خشب (ديك) تحت مكان الطبخ
+        var grass = Block(root, "Grass", new Vector3(0f, -0.12f, -1f), new Vector3(W + 10f, 0.2f, R + 10f), TexMat("Grass", "GrassTex", GrassTex(), new Vector2((W + 10f) / 3f, (R + 10f) / 3f)), true);
+        var deck = Block(root, "Deck", new Vector3(0f, -0.1f, 0f), new Vector3(C + 0.6f, 0.2f, R + 0.3f), TexMat("Deck_Wood", "FloorWood", WoodTex(), new Vector2((C + 0.6f) / 4f, R / 2f)), true);
+        Block(root, "Deck_Edge", new Vector3(0f, -0.06f, -R / 2f - 0.17f), new Vector3(C + 0.7f, 0.14f, 0.08f), Mat("Deck_Edge", new Color(0.55f, 0.38f, 0.24f)), false);
+
+        // جدار البيت ورا (خشب أزرق) مع شبابيك وباب
+        var siding = Mat("House_Blue", HouseBlue);
+        Block(root, "House_Wall", new Vector3(0f, 1.5f, z + 0.15f), new Vector3(W + 0.6f, 3f, 0.3f), siding, true);
+        var line = Mat("House_Line", new Color(0.52f, 0.66f, 0.8f));
+        for (int i = 0; i < 9; i++) Block(root, "Siding", new Vector3(0f, 0.25f + i * 0.32f, z - 0.005f), new Vector3(W + 0.6f, 0.02f, 0.02f), line, false);
+        var white = Mat("Trim_White", new Color(0.98f, 0.97f, 0.95f));
+        foreach (float wx in new[] { -C / 4f - 0.3f, C / 4f + 0.3f })
+        {
+            BuildWindow(root, new Vector3(wx, 1.35f, z));
+            Block(root, "Shutter", new Vector3(wx - 0.85f, 1.9f, z - 0.03f), new Vector3(0.2f, 1.1f, 0.04f), white, false);
+            Block(root, "Shutter", new Vector3(wx + 0.85f, 1.9f, z - 0.03f), new Vector3(0.2f, 1.1f, 0.04f), white, false);
+        }
+        // باب بالنص
+        Block(root, "Door", new Vector3(0f, 1.05f, z - 0.02f), new Vector3(0.9f, 2.1f, 0.05f), Mat("Door", new Color(0.95f, 0.55f, 0.35f)), false);
+        Block(root, "Door_Frame", new Vector3(0f, 2.13f, z - 0.03f), new Vector3(1.05f, 0.08f, 0.06f), white, false);
+        Part(root, PrimitiveType.Sphere, new Vector3(0.32f, 1.0f, z - 0.06f), Vector3.one * 0.07f, MatS("Brass", new Color(0.85f, 0.68f, 0.3f), 0.8f)).name = "Door_Knob";
+
+        // أضواء معلقة بين الجدار والأعمدة قدام
+        StringLights(root, new Vector3(-W / 2f + 0.2f, 2.5f, z - 0.05f), new Vector3(W / 2f - 0.2f, 2.5f, z - 0.05f), 0.35f, 0);
+
+        // سور خشب أبيض يمين ويسار
+        PicketFence(root, new Vector3(-W / 2f, 0f, -R / 2f - 0.2f), new Vector3(-W / 2f, 0f, z));
+        PicketFence(root, new Vector3(W / 2f, 0f, -R / 2f - 0.2f), new Vector3(W / 2f, 0f, z));
+
+        // جدران مخفية: الطباخة تبقى داخل منطقة اللعب
+        Invisible(root, "Wall_Front (invisible)", new Vector3(0f, 1f, -R / 2f - 0.15f), new Vector3(W, 2f, 0.3f));
+        if (!serveAtTable) Invisible(root, "Wall_PlayLeft (invisible)", new Vector3(-C / 2f - 0.1f, 1f, 0f), new Vector3(0.2f, 2f, R));
+        Invisible(root, "Wall_PlayRight (invisible)", new Vector3(C / 2f + 0.1f, 1f, 0f), new Vector3(0.2f, 2f, R));
+        Invisible(root, "Wall_Left (invisible)", new Vector3(-W / 2f + 0.1f, 1f, 0f), new Vector3(0.2f, 2f, R));
+
+        float lx = -C / 2f - Side / 2f, rx = C / 2f + Side / 2f;
+
+        // يسار: طاولة الحفلة (الأم والضيوف) + بالونات
+        PicnicTable(root.transform, new Vector3(lx, 0f, -R / 2f + 1.4f));
+        Balloons(root.transform, new Vector3(lx - 0.6f, 0f, z - 0.5f), 0);
+
+        // يمين: ثلاجة مشروبات، شجرة، بالونات
+        Cooler(root.transform, new Vector3(rx, 0f, -R / 2f + 0.9f));
+        Tree(root.transform, new Vector3(rx + 0.3f, 0f, z - 0.6f), 1);
+        Balloons(root.transform, new Vector3(rx - 0.5f, 0f, z - 0.3f), 1);
+        CutePlant(root.transform, new Vector3(lx + 0.8f, 0f, z - 0.35f), 0.7f, 4);
+    }
+
+    static void PicketFence(GameObject root, Vector3 a, Vector3 b)
+    {
+        var f = new GameObject("Fence");
+        f.transform.SetParent(root.transform);
+        var white = Mat("Fence_White", new Color(0.97f, 0.96f, 0.93f));
+        float len = Vector3.Distance(a, b);
+        int n = Mathf.Max(2, Mathf.RoundToInt(len / 0.22f));
+        for (int i = 0; i <= n; i++)
+        {
+            Vector3 p = Vector3.Lerp(a, b, i / (float)n);
+            Part(f, PrimitiveType.Cube, p + new Vector3(0f, 0.45f, 0f), new Vector3(0.09f, 0.9f, 0.04f), white).transform.rotation = Quaternion.LookRotation(b - a);
+            Part(f, PrimitiveType.Cube, p + new Vector3(0f, 0.92f, 0f), new Vector3(0.065f, 0.065f, 0.04f), white).transform.rotation = Quaternion.LookRotation(b - a) * Quaternion.Euler(0f, 0f, 45f);
+        }
+        foreach (float y in new[] { 0.25f, 0.7f })
+        {
+            var rail = Part(f, PrimitiveType.Cube, (a + b) / 2f + new Vector3(0f, y, 0f), new Vector3(0.03f, 0.07f, len), white);
+            rail.transform.rotation = Quaternion.LookRotation(b - a);
+        }
+    }
+
+    static void StringLights(GameObject root, Vector3 a, Vector3 b, float sag, int seed)
+    {
+        var g = new GameObject("String_Lights");
+        g.transform.SetParent(root.transform);
+        var wire = Mat("Wire", new Color(0.15f, 0.15f, 0.15f));
+        Color[] cols = { new Color(1f, 0.85f, 0.5f), new Color(1f, 0.55f, 0.6f), new Color(0.6f, 0.8f, 1f), new Color(0.75f, 1f, 0.6f) };
+        int n = Mathf.RoundToInt(Vector3.Distance(a, b) / 0.35f);
+        Vector3 prev = a;
+        for (int i = 1; i <= n; i++)
+        {
+            float t = i / (float)n;
+            Vector3 p = Vector3.Lerp(a, b, t) + Vector3.down * sag * 4f * t * (1f - t) * 1f;
+            p.y -= Mathf.Abs(Mathf.Sin(t * Mathf.PI * 3f)) * sag;
+            var w = Part(g, PrimitiveType.Cube, (prev + p) / 2f, new Vector3(0.01f, 0.01f, Vector3.Distance(prev, p)), wire);
+            w.transform.rotation = Quaternion.LookRotation(p - prev);
+            if (i < n) Part(g, PrimitiveType.Sphere, p + Vector3.down * 0.05f, new Vector3(0.07f, 0.09f, 0.07f), MatGlow("Bulb_" + ((i + seed) % cols.Length), cols[(i + seed) % cols.Length], 2.2f));
+            prev = p;
+        }
+    }
+
+    static void Balloons(Transform parent, Vector3 bottom, int seed)
+    {
+        var g = new GameObject("Balloons");
+        g.transform.SetParent(parent, true);
+        g.transform.position = bottom;
+        Color[] cols = { new Color(1f, 0.48f, 0.66f), new Color(0.42f, 0.62f, 0.86f), new Color(1f, 0.82f, 0.35f) };
+        var str = Mat("Balloon_String", new Color(0.9f, 0.9f, 0.9f));
+        Part(g, PrimitiveType.Cube, new Vector3(0f, 0.05f, 0f), new Vector3(0.12f, 0.1f, 0.12f), Mat("Balloon_Weight", new Color(0.5f, 0.45f, 0.5f)));
+        for (int i = 0; i < 3; i++)
+        {
+            Vector3 top = new Vector3((i - 1) * 0.22f, 1.75f + (i % 2) * 0.22f, (i % 2) * 0.12f);
+            var s = Part(g, PrimitiveType.Cylinder, top / 2f, new Vector3(0.008f, top.magnitude / 2f, 0.008f), str);
+            s.transform.localRotation = Quaternion.FromToRotation(Vector3.up, top);
+            Part(g, PrimitiveType.Sphere, top + Vector3.up * 0.15f, new Vector3(0.28f, 0.34f, 0.28f), MatS("Balloon_" + ((i + seed) % 3), cols[(i + seed) % 3], 0.85f));
+        }
+    }
+
+    static void Tree(Transform parent, Vector3 bottom, int seed)
+    {
+        var g = new GameObject("Tree");
+        g.transform.SetParent(parent, true);
+        g.transform.position = bottom;
+        Part(g, PrimitiveType.Cylinder, new Vector3(0f, 0.9f, 0f), new Vector3(0.22f, 0.9f, 0.22f), Mat("Bark", new Color(0.45f, 0.32f, 0.22f)));
+        var l1 = Mat("Leaf", new Color(0.3f, 0.58f, 0.3f));
+        var l2 = Mat("Leaf_Light", new Color(0.46f, 0.72f, 0.36f));
+        Part(g, PrimitiveType.Sphere, new Vector3(0f, 2.2f, 0f), new Vector3(1.4f, 1.1f, 1.4f), l1);
+        Part(g, PrimitiveType.Sphere, new Vector3(-0.35f, 2.0f, -0.25f), new Vector3(0.9f, 0.8f, 0.9f), l2);
+        Part(g, PrimitiveType.Sphere, new Vector3(0.4f, 2.5f, 0.1f), new Vector3(0.8f, 0.7f, 0.8f), l2);
+    }
+
+    static void Cooler(Transform parent, Vector3 bottom)
+    {
+        var g = new GameObject("Cooler");
+        g.transform.SetParent(parent, true);
+        g.transform.position = bottom;
+        Part(g, PrimitiveType.Cube, new Vector3(0f, 0.22f, 0f), new Vector3(0.7f, 0.44f, 0.45f), MatS("Cooler_Blue", new Color(0.3f, 0.55f, 0.85f), 0.5f));
+        Part(g, PrimitiveType.Cube, new Vector3(0f, 0.47f, 0f), new Vector3(0.74f, 0.07f, 0.49f), Mat("Trim_White", new Color(0.98f, 0.97f, 0.95f)));
+        Color[] cans = { new Color(0.9f, 0.25f, 0.25f), new Color(0.3f, 0.75f, 0.4f), new Color(1f, 0.75f, 0.2f) };
+        for (int i = 0; i < 3; i++)
+            Part(g, PrimitiveType.Cylinder, new Vector3(-0.2f + i * 0.2f, 0.57f, 0f), new Vector3(0.07f, 0.06f, 0.07f), MatS("Can_" + i, cans[i], 0.7f));
+    }
+
+    // طاولة الحفلة: مفرش مربعات، كراسي، لمبة. التسليم هنا للأم والضيوف
+    static void PicnicTable(Transform parent, Vector3 center)
+    {
+        var p = new GameObject("PartyTable");
+        p.transform.SetParent(parent, true);
+        p.transform.position = center;
+        var wood = MatS("Picnic_Wood", new Color(0.78f, 0.58f, 0.4f), 0.3f);
+        var cloth = TexMat("Picnic_Cloth", "CheckerRed", CheckerSmallTex(new Color(0.9f, 0.32f, 0.32f)), new Vector2(3f, 2f));
+        Part(p, PrimitiveType.Cube, new Vector3(0f, 0.74f, 0f), new Vector3(1.5f, 0.05f, 0.85f), wood);
+        Part(p, PrimitiveType.Cube, new Vector3(0f, 0.77f, 0f), new Vector3(1.3f, 0.01f, 0.88f), cloth);
+        for (int a = -1; a <= 1; a += 2)
+            Part(p, PrimitiveType.Cube, new Vector3(a * 0.6f, 0.37f, 0f), new Vector3(0.06f, 0.74f, 0.7f), wood);
+        // كراسي ورا وقدام
+        var seat = Mat("Chair_Blue", new Color(0.4f, 0.6f, 0.85f));
+        var chrome = MatS("Chrome", new Color(0.85f, 0.86f, 0.88f), 0.85f);
+        foreach (float cx in new[] { -0.35f, 0.35f })
+            for (int s = -1; s <= 1; s += 2)
+            {
+                var ch = new GameObject(s > 0 && cx < 0f ? "Chair_Mom" : "Chair");
+                ch.transform.SetParent(p.transform, false);
+                ch.transform.localPosition = new Vector3(cx, 0f, s * 0.68f);
+                ch.transform.localRotation = Quaternion.Euler(0f, s > 0 ? 0f : 180f, 0f);
+                Part(ch, PrimitiveType.Cube, new Vector3(0f, 0.46f, 0f), new Vector3(0.42f, 0.06f, 0.42f), seat);
+                Part(ch, PrimitiveType.Cube, new Vector3(0f, 0.8f, 0.2f), new Vector3(0.42f, 0.36f, 0.05f), seat);
+                for (int a = -1; a <= 1; a += 2)
+                    for (int b = -1; b <= 1; b += 2)
+                        Part(ch, PrimitiveType.Cylinder, new Vector3(a * 0.18f, 0.22f, b * 0.18f), new Vector3(0.03f, 0.22f, 0.03f), chrome);
+            }
+        // صحون وعصير على الطاولة
+        var plate = Mat("Plate", new Color(0.97f, 0.97f, 0.97f));
+        Part(p, PrimitiveType.Cylinder, new Vector3(-0.35f, 0.785f, 0.25f), new Vector3(0.28f, 0.01f, 0.28f), plate);
+        Part(p, PrimitiveType.Cylinder, new Vector3(0.35f, 0.785f, -0.25f), new Vector3(0.28f, 0.01f, 0.28f), plate);
+        Part(p, PrimitiveType.Cylinder, new Vector3(0.45f, 0.88f, 0.2f), new Vector3(0.14f, 0.11f, 0.14f), MatS("Lemonade", new Color(1f, 0.9f, 0.45f), 0.9f));
+        Vase(p.transform, center + new Vector3(0f, 0.78f, 0f));
+
+        var bc = p.AddComponent<BoxCollider>();
+        bc.center = new Vector3(0f, 0.39f, 0f);
+        bc.size = new Vector3(1.5f, 0.78f, 0.9f);
+        var chairs = p.AddComponent<BoxCollider>();
+        chairs.center = new Vector3(0f, 0.5f, 0.7f);
+        chairs.size = new Vector3(1.2f, 1f, 0.5f);
+        var sv = p.AddComponent<ServeWindow>();
+        sv.hint = "[E] Serve the guests";
+        PlaceMom(p.transform, center + new Vector3(-0.35f, 0f, 0.72f));
+        // الجدة والضيوف حول الطاولة
+        PlaceGuest(p.transform, "granny", center + new Vector3(0.35f, 0f, 0.72f), 180f, 1.58f);
+        PlaceGuest(p.transform, "aj", center + new Vector3(-0.35f, 0f, -0.72f), 0f, 1.55f);
+        PlaceGuest(p.transform, "ch03", center + new Vector3(0.35f, 0f, -0.72f), 0f, 1.7f);
+        var front = p.AddComponent<BoxCollider>();
+        front.center = new Vector3(0f, 0.5f, -0.7f);
+        front.size = new Vector3(1.2f, 1f, 0.5f);
+    }
+
+    static Texture2D GrassTex()
+    {
+        int n = 128;
+        var tex = new Texture2D(n, n);
+        tex.wrapMode = TextureWrapMode.Repeat;
+        var rnd = new System.Random(5);
+        for (int y = 0; y < n; y++)
+            for (int x = 0; x < n; x++)
+            {
+                float v = Mathf.PerlinNoise(x * 0.08f, y * 0.08f) * 0.12f + (float)rnd.NextDouble() * 0.06f;
+                tex.SetPixel(x, y, new Color(Grass.r - 0.05f + v, Grass.g - 0.05f + v, Grass.b - 0.04f + v * 0.5f));
+            }
+        tex.Apply();
+        return tex;
+    }
+
     // ---------- الطباخة ----------
 
     static void BuildChef(Vector3 pos)
@@ -1260,7 +2067,7 @@ public static class KitchenBuilder
         var chefGo = GameObject.Find("Chef");
         if (chefGo != null) follow.target = chefGo.transform;
         cam.clearFlags = CameraClearFlags.SolidColor;
-        cam.backgroundColor = new Color(0.16f, 0.12f, 0.1f);
+        cam.backgroundColor = outdoor ? new Color(0.98f, 0.8f, 0.62f) : new Color(0.16f, 0.12f, 0.1f);
 
         var data = cam.GetUniversalAdditionalCameraData();
         if (data != null)
@@ -1291,6 +2098,13 @@ public static class KitchenBuilder
         sun.shadows = LightShadows.Soft;
         sun.shadowStrength = 0.7f;
         sun.transform.rotation = Quaternion.Euler(32f, 155f, 0f);
+        if (outdoor)
+        {
+            // عصرية برا: شمس أقوى
+            sun.intensity = 2.1f;
+            sun.color = new Color(1f, 0.86f, 0.66f);
+            sun.transform.rotation = Quaternion.Euler(42f, 150f, 0f);
+        }
 
         // ضوء محيط دافي
         RenderSettings.ambientMode = AmbientMode.Trilight;

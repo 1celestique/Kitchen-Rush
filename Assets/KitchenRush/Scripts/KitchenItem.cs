@@ -52,6 +52,24 @@ public class KitchenItem : MonoBehaviour
         if (GetBounds(out b)) transform.position += Vector3.up * (top.y - b.min.y);
     }
 
+    // يغير لونه (اللحم لما يستوي أو يحترق). الألوان الأصلية تنحفظ أول مرة
+    System.Collections.Generic.Dictionary<Material, Color> baseCols;
+    public void Tint(Color mul)
+    {
+        if (baseCols == null) baseCols = new System.Collections.Generic.Dictionary<Material, Color>();
+        foreach (var r in GetComponentsInChildren<Renderer>(true))
+        {
+            foreach (var m in r.materials)
+            {
+                string prop = m.HasProperty("_BaseColor") ? "_BaseColor" : (m.HasProperty("_Color") ? "_Color" : null);
+                if (prop == null) continue;
+                Color c;
+                if (!baseCols.TryGetValue(m, out c)) { c = m.GetColor(prop); baseCols[m] = c; }
+                m.SetColor(prop, new Color(c.r * mul.r * 1.2f, c.g * mul.g * 1.2f, c.b * mul.b * 1.2f, c.a));
+            }
+        }
+    }
+
     // يتقطع: الشكل يصير ثلاث قطع صغيرة
     public void SetChopped()
     {

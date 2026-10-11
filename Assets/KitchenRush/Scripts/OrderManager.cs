@@ -39,6 +39,13 @@ public class OrderManager : MonoBehaviour
     public float nextOrderDelay = 4f;
     public int[] starScores = { 60, 100, 140 };
 
+    [Header("بطاقة القصة أول المرحلة (Enter يبدأ)")]
+    public bool showChapter = true;
+    public string chapterLabel = "CHAPTER 1";
+    public string chapterTitle = "Dinner for Mom";
+    [TextArea(3, 6)]
+    public string chapterText = "Nina has always dreamed of opening her own restaurant one day.\nTonight, Mom asked her to cook dinner for the family.\nIt's her first real test in the kitchen!";
+
     [Header("القصة: كلام تحت الشاشة قبل ما تبدأ الطلبات (Enter يسرّعها)")]
     public string speaker = "Nina";
     public string[] introCaptions =
@@ -102,6 +109,8 @@ public class OrderManager : MonoBehaviour
         timeLeft = levelTime;
         spawnT = firstOrderDelay;
         KitchenHUD.Ensure(this);
+        KitchenAudio.Music("music");
+        if (showChapter) KitchenHUD.ShowCard(chapterLabel, chapterTitle, chapterText);
         foreach (var line in introCaptions)
         {
             if (line.StartsWith("Tip:")) KitchenHUD.Caption("", line, 3f);
@@ -112,12 +121,13 @@ public class OrderManager : MonoBehaviour
     void Update()
     {
         var k = Keyboard.current;
-        if (!ended && k != null && k.hKey.wasPressedThisFrame) KitchenHUD.ToggleBook(this);
-        if (KitchenHUD.BookOpen) return;
+        if (!ended && !KitchenHUD.CardOpen && k != null && k.hKey.wasPressedThisFrame) KitchenHUD.ToggleBook(this);
+        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen) return;
         if (ended)
         {
             if (k != null && k.rKey.wasPressedThisFrame) Retry();
             if (k != null && (k.enterKey.wasPressedThisFrame || k.nKey.wasPressedThisFrame)) Next();
+            if (k != null && k.escapeKey.wasPressedThisFrame) GoToMenu();
             return;
         }
 
@@ -141,6 +151,7 @@ public class OrderManager : MonoBehaviour
                 orders.RemoveAt(i);
                 score = Mathf.Max(0, score - missedPenalty);
                 KitchenHUD.Flash("Order missed! -" + missedPenalty, new Color(1f, 0.45f, 0.4f));
+                KitchenAudio.Play("wrong");
                 if (!KitchenHUD.CaptionsBusy) KitchenHUD.Caption(speaker, missedLine, 1.6f);
                 spawnT = Mathf.Max(spawnT, 1.5f);
             }
@@ -153,6 +164,7 @@ public class OrderManager : MonoBehaviour
             {
                 var r = menu[Random.Range(0, menu.Count)];
                 orders.Add(new Order { recipe = r, timeLeft = patience, patience = patience });
+                KitchenAudio.Play("ding", 0.5f);
                 spawnT = nextOrderDelay;
             }
         }
@@ -169,6 +181,7 @@ public class OrderManager : MonoBehaviour
             score += gain;
             orders.Remove(o);
             KitchenHUD.Flash(o.recipe.name + "  +" + gain, new Color(0.6f, 1f, 0.5f));
+            KitchenAudio.Play("serve");
             if (!saidFirst) { saidFirst = true; KitchenHUD.Caption(speaker, firstServeLine, 1.8f); }
             spawnT = Mathf.Min(spawnT, 2f);
             return true;
@@ -193,6 +206,7 @@ public class OrderManager : MonoBehaviour
         string key = "Stars_" + SceneManager.GetActiveScene().name;
         if (Stars > PlayerPrefs.GetInt(key, 0)) { PlayerPrefs.SetInt(key, Stars); PlayerPrefs.Save(); }
         Time.timeScale = 0f;
+        KitchenAudio.Play(Stars > 0 ? "serve" : "wrong");
         KitchenHUD.ShowResults(this);
     }
 
@@ -204,9 +218,19 @@ public class OrderManager : MonoBehaviour
 
     public void Next()
     {
+        // المرحلة الجاية تنفتح بس لو جبتي نجمة وحدة على الأقل
+        if (Stars == 0) { KitchenHUD.Flash("Get at least 1 star to unlock the next level", new Color(1f, 0.6f, 0.5f)); KitchenAudio.Play("wrong"); return; }
         Time.timeScale = 1f;
         int i = SceneManager.GetActiveScene().buildIndex + 1;
         if (i > 0 && i < SceneManager.sceneCountInBuildSettings) SceneManager.LoadScene(i);
+        else GoToMenu();
+    }
+
+    // يرجع للقائمة الرئيسية (أول مشهد في Build Settings)
+    public void GoToMenu()
+    {
+        Time.timeScale = 1f;
+        if (SceneManager.sceneCountInBuildSettings > 0 && SceneManager.GetActiveScene().buildIndex != 0) SceneManager.LoadScene(0);
         else Retry();
     }
 }

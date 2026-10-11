@@ -64,6 +64,7 @@ public class KitchenHUD : MonoBehaviour
         I.flashText.text = msg;
         I.flashText.color = c;
         I.flashUntil = Time.unscaledTime + 1.6f;
+        I.flashText.transform.SetAsLastSibling();
     }
 
     public static void Bar(Object key, Vector3 world, float value, Color c)
@@ -227,6 +228,7 @@ public class KitchenHUD : MonoBehaviour
 
     void LateUpdate()
     {
+        if (CardOpen) { UpdateCard(); return; }
         UpdateCaptions();
         if (om == null) return;
 
@@ -342,6 +344,73 @@ public class KitchenHUD : MonoBehaviour
 
     readonly Dictionary<RectTransform, float> barWidth = new Dictionary<RectTransform, float>();
 
+    // ---------- بطاقة القصة أول كل مرحلة ----------
+    RectTransform card;
+    Text cardPress;
+    float cardOpenedAt, cardWait;
+    public static bool CardOpen { get { return I != null && I.card != null && I.card.gameObject.activeSelf; } }
+
+    public static void ShowCard(string chapter, string title, string body)
+    {
+        if (I == null) return;
+        I.BuildCard(chapter, title, body);
+        Time.timeScale = 0f;
+    }
+
+    void BuildCard(string chapter, string title, string body)
+    {
+        if (card != null) Destroy(card.gameObject);
+        card = Panel(root, "StoryCard", new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, new Color(0.07f, 0.05f, 0.05f, 0.9f));
+        card.GetComponent<Image>().sprite = null;
+        card.anchorMin = Vector2.zero; card.anchorMax = Vector2.one; card.sizeDelta = Vector2.zero;
+
+        var page = Panel(card, "Page", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(980, 520), Paper);
+        var stripe = Panel(page, "Stripe", new Vector2(0.5f, 1f), new Vector2(0, -6), new Vector2(980, 12), Pink);
+        stripe.pivot = new Vector2(0.5f, 1f);
+
+        var ch = Label(page, chapter, 26, Pink, TextAnchor.MiddleCenter);
+        ch.rectTransform.anchorMin = ch.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+        ch.rectTransform.sizeDelta = new Vector2(900, 40);
+        ch.rectTransform.anchoredPosition = new Vector2(0, -62);
+
+        var t = Label(page, title, 58, Ink, TextAnchor.MiddleCenter);
+        t.rectTransform.anchorMin = t.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+        t.rectTransform.sizeDelta = new Vector2(900, 80);
+        t.rectTransform.anchoredPosition = new Vector2(0, -122);
+
+        var b = Label(page, body, 28, new Color(0.32f, 0.27f, 0.23f), TextAnchor.UpperCenter);
+        b.fontStyle = FontStyle.Normal;
+        b.horizontalOverflow = HorizontalWrapMode.Wrap;
+        b.lineSpacing = 1.25f;
+        b.rectTransform.anchorMin = b.rectTransform.anchorMax = new Vector2(0.5f, 1f);
+        b.rectTransform.pivot = new Vector2(0.5f, 1f);
+        b.rectTransform.sizeDelta = new Vector2(860, 220);
+        b.rectTransform.anchoredPosition = new Vector2(0, -190);
+
+        cardPress = Label(page, "Press [Enter] to start", 26, new Color(0.55f, 0.48f, 0.42f), TextAnchor.MiddleCenter);
+        cardPress.rectTransform.anchorMin = cardPress.rectTransform.anchorMax = new Vector2(0.5f, 0f);
+        cardPress.rectTransform.sizeDelta = new Vector2(900, 50);
+        cardPress.rectTransform.anchoredPosition = new Vector2(0, 50);
+        cardOpenedAt = Time.unscaledTime;
+        cardWait = 0f;
+        card.gameObject.SetActive(true);
+    }
+
+    void UpdateCard()
+    {
+        float a = 0.55f + 0.45f * Mathf.Sin((Time.unscaledTime - cardOpenedAt) * 4f);
+        cardPress.color = new Color(0.55f, 0.48f, 0.42f, a);
+        // ننتظر شوي (أول فريمات المرحلة تكون ثقيلة) عشان ما تنقفل لحالها
+        cardWait += Mathf.Min(Time.unscaledDeltaTime, 0.05f);
+        if (cardWait < 0.6f) return;
+        var k = UnityEngine.InputSystem.Keyboard.current;
+        bool go = k != null && (k.enterKey.wasPressedThisFrame || k.numpadEnterKey.wasPressedThisFrame || k.spaceKey.wasPressedThisFrame);
+        if (!go) return;
+        card.gameObject.SetActive(false);
+        Time.timeScale = 1f;
+        KitchenAudio.Play("click");
+    }
+
     // ---------- كتاب الوصفات (H) ----------
     RectTransform book;
     public static bool BookOpen { get { return I != null && I.book != null && I.book.gameObject.activeSelf; } }
@@ -422,6 +491,10 @@ public class KitchenHUD : MonoBehaviour
 
         MakeButton(card, "RETRY  (R)", new Vector2(-140, 60), new Color(0.35f, 0.32f, 0.3f), m.Retry);
         MakeButton(card, "NEXT  (Enter)", new Vector2(140, 60), m.Stars > 0 ? Pink : new Color(0.7f, 0.66f, 0.62f), m.Next);
+        var menu = Label(card, "[Esc] Main Menu", 20, new Color(0.5f, 0.45f, 0.4f), TextAnchor.MiddleCenter);
+        menu.rectTransform.anchorMin = menu.rectTransform.anchorMax = new Vector2(0.5f, 0f);
+        menu.rectTransform.sizeDelta = new Vector2(400, 30);
+        menu.rectTransform.anchoredPosition = new Vector2(0, 14);
     }
 
     // ---------- أدوات ----------
@@ -503,7 +576,7 @@ public class KitchenHUD : MonoBehaviour
         }
     }
 
-    static Sprite MakeRounded(int size, int r)
+    public static Sprite MakeRounded(int size, int r)
     {
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         tex.wrapMode = TextureWrapMode.Clamp;
@@ -520,7 +593,7 @@ public class KitchenHUD : MonoBehaviour
         return Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 100f, 0, SpriteMeshType.FullRect, new Vector4(r, r, r, r));
     }
 
-    static Sprite MakeStar(int size)
+    public static Sprite MakeStar(int size)
     {
         var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
         var pts = new Vector2[10];

@@ -24,12 +24,16 @@ public class ChopStation : Station
     {
         if (!CanChop) return;
         chef.MarkWorking();
+        float before = progress;
         progress += dt / Mathf.Max(0.1f, chopTime);
+        // طق طق كل ربع ثانية تقريباً
+        if (Mathf.FloorToInt(before * chopTime * 4f) != Mathf.FloorToInt(progress * chopTime * 4f)) KitchenAudio.Play("chop", 0.8f);
         if (progress >= 1f)
         {
             progress = 0f;
             item.SetChopped();
             replace = true;
+            KitchenAudio.Play("pickup", 0.6f);
         }
     }
 

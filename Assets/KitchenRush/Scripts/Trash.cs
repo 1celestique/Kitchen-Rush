@@ -14,11 +14,13 @@ public class Trash : Station
         var plate = chef.held as Plate;
         if (plate == null) return false;
         plate.Clear();
+        KitchenAudio.Play("drop");
         return true;
     }
 
     public override void Put(KitchenItem i)
     {
         if (i != null) Destroy(i.gameObject);
+        KitchenAudio.Play("drop");
     }
 }
