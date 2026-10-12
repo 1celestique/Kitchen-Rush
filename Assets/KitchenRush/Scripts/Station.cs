@@ -35,6 +35,13 @@ public class Station : MonoBehaviour
         if (h == null) return false;
         string why;
 
+        // حليب + ماتشا / كورن فليكس
+        if (item != null && !(h is Plate) && !(item is Plate))
+        {
+            if (h.ingredient == Ingredient.Milk && item.CanTakeMilk) { item.AddMilk(); Destroy(chef.Release().gameObject); return true; }
+            if (item.ingredient == Ingredient.Milk && h.CanTakeMilk) { h.AddMilk(); Destroy(item.gameObject); item = null; return true; }
+        }
+
         var plateHere = item as Plate;
         if (plateHere != null && !(h is Plate))
         {
@@ -53,10 +60,22 @@ public class Station : MonoBehaviour
         return false;
     }
 
+    // ليش ما ينحط هنا؟ (يطلع للاعب مع صوت غلط)
+    public virtual string RejectReason(KitchenItem i)
+    {
+        return item != null ? "There's something here already" : "You can't put that here";
+    }
+
     // لما تمسك Space قدام الطاولة (التقطيع)
     public virtual void Work(ChefController chef, float dt) { }
 
-    public virtual string Hint(ChefController chef) { return null; }
+    public virtual string Hint(ChefController chef)
+    {
+        var h = chef.held;
+        if (h != null && item != null && !(h is Plate) && !(item is Plate))
+            if ((h.ingredient == Ingredient.Milk && item.CanTakeMilk) || (item.ingredient == Ingredient.Milk && h.CanTakeMilk)) return "[E] Add the milk";
+        return null;
+    }
 
     // سطح الطاولة من فوق
     public Vector3 TopPoint()

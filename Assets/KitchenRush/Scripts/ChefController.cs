@@ -40,6 +40,11 @@ public class ChefController : MonoBehaviour
     public bool isActive = true;
     public KitchenItem held;
 
+    // وضع العرض (Demo): لاعب آلي يحرك نينا
+    public static bool BotMode;
+    [System.NonSerialized] public Vector3 botInput;
+    [System.NonSerialized] public bool botInteract, botWork;
+
     CharacterController cc;
     float dashT, cooldownT, vy, walkPhase, squash, workT;
     Vector3 dashDir, moveVel;
@@ -89,9 +94,10 @@ public class ChefController : MonoBehaviour
         float dt = Time.deltaTime;
         var k = Keyboard.current;
         if (OrderManager.Instance != null && OrderManager.Instance.ended) return;
-        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen) return;
+        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen || KitchenHUD.Paused) return;
         Vector3 input = Vector3.zero;
-        if (isActive && k != null)
+        if (BotMode) input = botInput;
+        else if (isActive && k != null)
         {
             if (k.wKey.isPressed) input.z += 1f;
             if (k.sKey.isPressed) input.z -= 1f;
@@ -101,7 +107,7 @@ public class ChefController : MonoBehaviour
         input = Vector3.ClampMagnitude(input, 1f);
 
         var cam = Camera.main;
-        if (cam != null) input = Quaternion.Euler(0f, cam.transform.eulerAngles.y, 0f) * input;
+        if (cam != null && !BotMode) input = Quaternion.Euler(0f, cam.transform.eulerAngles.y, 0f) * input;
 
         // تسارع وتباطؤ ناعم
         Vector3 target = input * speed;
@@ -136,14 +142,17 @@ public class ChefController : MonoBehaviour
         if (face.sqrMagnitude > 0.01f)
             transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(face), 1f - Mathf.Exp(-turnSharpness * dt));
 
-        if (isActive && k != null && k.eKey.wasPressedThisFrame) Interact();
+        bool ePressed = BotMode ? botInteract : (k != null && k.eKey.wasPressedThisFrame);
+        botInteract = false;
+        if (isActive && ePressed) Interact();
 
         // التقطيع: امسكي Space وأنتي قدام اللوح ويدك فاضية
         workT -= dt;
         if (isActive)
         {
             var front = FindStation();
-            if (front != null && k != null && k.spaceKey.isPressed && held == null) front.Work(this, dt);
+            bool workKey = BotMode ? botWork : (k != null && k.spaceKey.isPressed);
+            if (front != null && workKey && held == null) front.Work(this, dt);
             string hint = front != null ? front.Hint(this) : null;
             if (hint != null && workT <= 0f) KitchenHUD.Hint(transform.position + Vector3.up * 2.5f, hint);
         }
@@ -276,6 +285,12 @@ public class ChefController : MonoBehaviour
                 s.Put(it);
                 if (!(s is Grill) && !(s is Trash)) KitchenAudio.Play("drop");
             }
+            else
+            {
+                // مكان غلط: ما ينحط، ويطلع صوت ورسالة
+                KitchenAudio.Play("wrong");
+                KitchenHUD.Flash(s.RejectReason(held), new Color(1f, 0.6f, 0.5f));
+            }
         }
     }
 
@@ -288,7 +303,9 @@ public class ChefController : MonoBehaviour
     }
 
     // تنادى من لوح التقطيع عشان يدينها تتحرك
-    public void MarkWorking() { workT = 0.1f; }
+    public void MarkWorking() { workT = 0.1f; lastWork = Time.time; }
+    float lastWork = -10f;
+    public bool IsWorking { get { return Time.time - lastWork < 0.35f; } }   // تقطع/تحضّر الحين (مع مهلة صغيرة)
 
     public void Hold(KitchenItem it)
     {

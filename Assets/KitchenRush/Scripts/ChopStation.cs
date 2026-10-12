@@ -10,7 +10,13 @@ public class ChopStation : Station
     float progress;
     bool replace;
 
-    public override bool CanPut(KitchenItem i) { return item == null && !(i is Plate); }
+    public override bool CanPut(KitchenItem i) { return item == null && i != null && !(i is Plate) && i.Choppable; }
+
+    public override string RejectReason(KitchenItem i)
+    {
+        if (item != null) return "The board is busy";
+        return i is Plate ? "Plates don't go on the cutting board" : "You can't chop that!";
+    }
 
     public override KitchenItem Take(ChefController chef)
     {
@@ -18,7 +24,9 @@ public class ChopStation : Station
         return base.Take(chef);
     }
 
-    public bool CanChop { get { return item != null && !(item is Plate) && item.Choppable && !item.chopped; } }
+    public virtual bool CanChop { get { return item != null && !(item is Plate) && item.Choppable && !item.chopped; } }
+    protected virtual Color BarColor { get { return new Color(0.46f, 0.69f, 0.25f); } }
+    protected virtual string WorkSound { get { return "chop"; } }
 
     public override void Work(ChefController chef, float dt)
     {
@@ -27,7 +35,7 @@ public class ChopStation : Station
         float before = progress;
         progress += dt / Mathf.Max(0.1f, chopTime);
         // طق طق كل ربع ثانية تقريباً
-        if (Mathf.FloorToInt(before * chopTime * 4f) != Mathf.FloorToInt(progress * chopTime * 4f)) KitchenAudio.Play("chop", 0.8f);
+        if (Mathf.FloorToInt(before * chopTime * 4f) != Mathf.FloorToInt(progress * chopTime * 4f)) KitchenAudio.Play(WorkSound, 0.8f);
         if (progress >= 1f)
         {
             progress = 0f;
@@ -45,6 +53,6 @@ public class ChopStation : Station
     void Update()
     {
         if (replace && item != null) { item.PlaceOn(TopPoint()); replace = false; }
-        if (CanChop && progress > 0f) KitchenHUD.Bar(this, TopPoint() + Vector3.up * 0.7f, progress, new Color(0.46f, 0.69f, 0.25f));
+        if (CanChop && progress > 0f) KitchenHUD.Bar(this, TopPoint() + Vector3.up * 0.7f, progress, BarColor);
     }
 }

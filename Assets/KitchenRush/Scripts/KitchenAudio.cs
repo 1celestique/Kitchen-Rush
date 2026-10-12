@@ -16,8 +16,17 @@ public class KitchenAudio : MonoBehaviour
     readonly Dictionary<string, AudioClip> clips = new Dictionary<string, AudioClip>();
     readonly Dictionary<Object, AudioSource> loops = new Dictionary<Object, AudioSource>();
 
-    public static float SfxVolume = 0.8f;
-    public static float MusicVolume = 0.32f;
+    // الصوت (ينحفظ من الإعدادات في القائمة)
+    public static float SfxVolume { get { return PlayerPrefs.GetFloat("Vol_Sfx", 0.8f); } }
+    public static float MusicVolume { get { return PlayerPrefs.GetFloat("Vol_Music", 0.32f); } }
+
+    public static void SetVolumes(float music, float sfx)
+    {
+        PlayerPrefs.SetFloat("Vol_Music", Mathf.Clamp01(music));
+        PlayerPrefs.SetFloat("Vol_Sfx", Mathf.Clamp01(sfx));
+        PlayerPrefs.Save();
+        if (I != null && I.music != null) I.music.volume = MusicVolume;
+    }
 
     static KitchenAudio Get()
     {

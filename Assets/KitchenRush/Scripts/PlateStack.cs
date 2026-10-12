@@ -19,6 +19,8 @@ public class PlateStack : Station
 
     public override bool CanPut(KitchenItem i) { return item == null && i is Plate; }
 
+    public override string RejectReason(KitchenItem i) { return item != null ? "There's a plate here already" : "You can't put that here"; }
+
     public override bool TryCombine(ChefController chef)
     {
         if (item != null) return base.TryCombine(chef);

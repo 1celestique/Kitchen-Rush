@@ -26,8 +26,12 @@ public class ChefSkin : MonoBehaviour
         public Skin(string n, Color c, Color a, Color p, Color h, Color hr, Color b) { name = n; coat = c; apron = a; pants = p; hat = h; hair = hr; bow = b; }
     }
 
-    public Skin[] skins =
+    public Skin[] skins = DefaultSkins();
+
+    public static Skin[] DefaultSkins()
     {
+        return new Skin[]
+        {
         new Skin("Nina",     Hex("FFE3EC"), Hex("FF7AA8"), Hex("7A4B6B"), Hex("FFFFFF"), Hex("4A2C24"), Hex("FF4F8B")),
         new Skin("Classic",  Hex("F7F7F2"), Hex("E4572E"), Hex("2B2E3A"), Hex("FFFFFF"), Hex("4A2C24"), Hex("E4572E")),
         new Skin("Mint",     Hex("DFF5EA"), Hex("2BB673"), Hex("1E3A34"), Hex("FFFFFF"), Hex("2E1E18"), Hex("2BB673")),
@@ -36,7 +40,8 @@ public class ChefSkin : MonoBehaviour
         new Skin("Lavender", Hex("EEE6FF"), Hex("8E6CF0"), Hex("2E2450"), Hex("FFFFFF"), Hex("3A2440"), Hex("B48CFF")),
         new Skin("Mocha",    Hex("F2E6D8"), Hex("8B5A3C"), Hex("3A2A20"), Hex("F2E6D8"), Hex("2A1A12"), Hex("C9824E")),
         new Skin("Night",    Hex("2A2A30"), Hex("F4B400"), Hex("111114"), Hex("2A2A30"), Hex("14100E"), Hex("F4B400")),
-    };
+        };
+    }
 
     [Header("الاسم فوق راسها")]
     public string chefName = "Nina";
@@ -102,7 +107,7 @@ public class ChefSkin : MonoBehaviour
     void OnGUI()
     {
         // ما يطلع فوق كتاب الوصفات ولا شاشة النهاية
-        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen) return;
+        if (KitchenHUD.BookOpen || KitchenHUD.CardOpen || KitchenHUD.Paused) return;
         if (OrderManager.Instance != null && OrderManager.Instance.ended) return;
         var cam = Camera.main;
         if (showName && cam != null && !string.IsNullOrEmpty(chefName))

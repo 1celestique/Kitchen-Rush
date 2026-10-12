@@ -19,6 +19,13 @@ public class Grill : Station
         return item == null && i != null && !(i is Plate) && i.ingredient == Ingredient.Meat && !i.burnt;
     }
 
+    public override string RejectReason(KitchenItem i)
+    {
+        if (item != null) return "The grill is busy";
+        if (i != null && i.burnt) return "It's burnt! Throw it away";
+        return "Only meat goes on the grill";
+    }
+
     public override void Put(KitchenItem i)
     {
         base.Put(i);
@@ -71,7 +78,8 @@ public class Grill : Station
             if (t >= cookTime)
             {
                 item.cooked = true;
-                item.Tint(new Color(0.55f, 0.36f, 0.24f));
+                if (!item.SwapModel(item.processedPrefab, 0.34f)) item.Tint(new Color(0.55f, 0.36f, 0.24f));
+                item.PlaceOn(TopPoint());
                 KitchenAudio.Play("ding");
             }
         }

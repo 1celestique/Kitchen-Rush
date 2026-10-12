@@ -192,6 +192,7 @@ public class KitchenHUD : MonoBehaviour
         capText.horizontalOverflow = HorizontalWrapMode.Wrap;
         capText.rectTransform.sizeDelta = new Vector2(-60, -16);
         capPanel.gameObject.SetActive(false);
+        UIFonts.Apply(gameObject);
     }
 
     void UpdateCaptions()
@@ -234,7 +235,7 @@ public class KitchenHUD : MonoBehaviour
 
         int t = Mathf.CeilToInt(om.timeLeft);
         timerText.text = (t / 60).ToString("00") + ":" + (t % 60).ToString("00");
-        timerText.color = om.timeLeft < 30f && !om.ended ? new Color(1f, 0.45f, 0.4f) : Color.white;
+        timerText.color = !om.mealMode && om.timeLeft < 30f && !om.ended ? new Color(1f, 0.45f, 0.4f) : Color.white;
         scoreText.text = om.score.ToString();
         int stars = om.Stars;
         for (int i = 0; i < 3; i++) starImgs[i].color = i < stars ? Gold : new Color(1f, 1f, 1f, 0.2f);
@@ -277,21 +278,36 @@ public class KitchenHUD : MonoBehaviour
     // خطوات الطبق: وش تقطعين، وش تطبخين، وبعدين الصحن والتسليم
     public static string[] Steps(Recipe r)
     {
+        // المشروبات: بدون صحن
+        string[] drink = null;
+        if (r.name == "COFFEE") drink = new[] { "Take a cup from the cabinet", "Brew it at the coffee machine", "Serve it to Mom" };
+        else if (r.name == "MATCHA LATTE") drink = new[] { "Take matcha from the cabinet", "Whisk it at the machine", "Add milk from the fridge", "Serve it to Mom" };
+        else if (r.name == "CORNFLAKES") drink = new[] { "Take cereal from the cabinet", "Add milk from the fridge", "Serve the bowl to Mom" };
+        if (drink != null)
+        {
+            for (int i = 0; i < drink.Length; i++) drink[i] = (i + 1) + ". " + drink[i];
+            return drink;
+        }
         var chop = new List<string>();
         var raw = new List<string>();
-        bool meat = false, fry = false;
+        bool meat = false, fry = false, coffee = false, matcha = false;
         foreach (var p in r.parts)
         {
             switch (p)
             {
                 case Ingredient.Meat: meat = true; break;
                 case Ingredient.Bun: raw.Add("bun"); break;
+                case Ingredient.Milk: case Ingredient.Cereal: raw.Add(p.ToString().ToLower()); break;
+                case Ingredient.Coffee: coffee = true; break;
+                case Ingredient.Matcha: matcha = true; break;
                 case Ingredient.Potato: chop.Add("potato"); fry = true; break;
                 default: chop.Add(p.ToString().ToLower()); break;
             }
         }
         var lines = new List<string>();
         if (chop.Count > 0) lines.Add("Chop the " + string.Join(" + ", chop.ToArray()));
+        if (coffee) lines.Add("Brew the coffee at the machine");
+        if (matcha) lines.Add("Whisk the matcha at the machine");
         if (meat) lines.Add("Grill the meat");
         if (fry) lines.Add("Fry the potato");
         string all = string.Join(" + ", System.Array.ConvertAll(r.parts, x => x.ToString().ToLower()));
@@ -339,6 +355,7 @@ public class KitchenHUD : MonoBehaviour
         var fill = Panel(bg, "Fill", new Vector2(0, 0.5f), new Vector2(3, 0), new Vector2(tw - 26, 10), new Color(0.46f, 0.69f, 0.25f));
         fill.pivot = new Vector2(0, 0.5f);
         barWidth[t] = tw - 26;
+        UIFonts.Apply(t.gameObject);
         return t;
     }
 
@@ -394,6 +411,7 @@ public class KitchenHUD : MonoBehaviour
         cardOpenedAt = Time.unscaledTime;
         cardWait = 0f;
         card.gameObject.SetActive(true);
+        UIFonts.Apply(gameObject);
     }
 
     void UpdateCard()
@@ -409,6 +427,175 @@ public class KitchenHUD : MonoBehaviour
         card.gameObject.SetActive(false);
         Time.timeScale = 1f;
         KitchenAudio.Play("click");
+    }
+
+    // ---------- قائمة الإيقاف (Esc): رجوع، الإعدادات، القائمة الرئيسية، إغلاق ----------
+    RectTransform pause, pauseMain, pauseSettings;
+    public static bool Paused { get { return I != null && I.pause != null && I.pause.gameObject.activeSelf; } }
+
+    public static void TogglePause(OrderManager m)
+    {
+        if (I == null) return;
+        if (I.pause == null) I.BuildPause(m);
+        bool open = !I.pause.gameObject.activeSelf;
+        I.pause.gameObject.SetActive(open);
+        I.pauseMain.gameObject.SetActive(true);
+        I.pauseSettings.gameObject.SetActive(false);
+        I.pause.SetAsLastSibling();
+        if (open && I.pauseTime != null)
+        {
+            int t = Mathf.CeilToInt(m.timeLeft);
+            I.pauseTime.text = (t / 60).ToString("00") + ":" + (t % 60).ToString("00");
+            I.pauseScore.text = m.score.ToString();
+        }
+        Time.timeScale = open ? 0f : 1f;
+        KitchenAudio.Play("click");
+    }
+
+    Text pauseTime, pauseScore;
+
+    void BuildPause(OrderManager m)
+    {
+        pause = Panel(root, "Pause", new Vector2(0.5f, 0.5f), Vector2.zero, Vector2.zero, new Color(0.06f, 0.07f, 0.12f, 0.72f));
+        pause.GetComponent<Image>().sprite = null;
+        pause.anchorMin = Vector2.zero; pause.anchorMax = Vector2.one; pause.sizeDelta = Vector2.zero;
+
+        // ===== الصفحة الأولى =====
+        pauseMain = PauseCard("Paused", m.levelTitle, 700);
+        // الوقت والنقاط
+        var chips = new GameObject("Chips", typeof(RectTransform)).GetComponent<RectTransform>();
+        chips.SetParent(pauseMain, false);
+        chips.anchorMin = chips.anchorMax = new Vector2(0.5f, 1f);
+        chips.anchoredPosition = new Vector2(0, -198);
+        pauseTime = Chip(chips, new Vector2(-110, 0), "TIME");
+        pauseScore = Chip(chips, new Vector2(110, 0), "SCORE");
+
+        PauseRow(pauseMain, "Resume", -250, true, new Color(1f, 0.48f, 0.66f), () => TogglePause(m));
+        PauseRow(pauseMain, "Settings", -326, false, new Color(0.42f, 0.62f, 0.86f), () => { pauseMain.gameObject.SetActive(false); pauseSettings.gameObject.SetActive(true); KitchenAudio.Play("click"); });
+        PauseRow(pauseMain, "Restart level", -402, false, new Color(1f, 0.72f, 0.3f), m.Retry);
+        PauseRow(pauseMain, "Main menu", -478, false, new Color(0.55f, 0.75f, 0.5f), m.GoToMenu);
+        PauseRow(pauseMain, "Quit game", -554, false, new Color(0.85f, 0.4f, 0.4f), Quit);
+        var hint = Label(pauseMain, "Esc  to resume", 18, new Color(0.6f, 0.55f, 0.5f), TextAnchor.LowerCenter);
+        hint.fontStyle = FontStyle.Normal;
+        hint.rectTransform.offsetMin = new Vector2(0, 26);
+
+        // ===== الإعدادات =====
+        pauseSettings = PauseCard("Settings", "Sound & screen", 560);
+        VolumeRow(pauseSettings, "Music", -200, () => KitchenAudio.MusicVolume, v => KitchenAudio.SetVolumes(v, KitchenAudio.SfxVolume));
+        VolumeRow(pauseSettings, "Sounds", -280, () => KitchenAudio.SfxVolume, v => KitchenAudio.SetVolumes(KitchenAudio.MusicVolume, v));
+        RectTransform fs = null;
+        bool fsOn = Screen.fullScreen;
+        fs = PauseRow(pauseSettings, fsOn ? "Fullscreen:  On" : "Fullscreen:  Off", -370, false, new Color(0.42f, 0.62f, 0.86f), () =>
+        {
+            fsOn = !fsOn;
+            Screen.fullScreen = fsOn;
+            fs.GetComponentInChildren<Text>().text = fsOn ? "Fullscreen:  On" : "Fullscreen:  Off";
+        });
+        PauseRow(pauseSettings, "Back", -446, true, new Color(1f, 0.48f, 0.66f), () => { pauseSettings.gameObject.SetActive(false); pauseMain.gameObject.SetActive(true); KitchenAudio.Play("click"); });
+        pauseSettings.gameObject.SetActive(false);
+        pause.gameObject.SetActive(false);
+        UIFonts.Apply(gameObject);
+    }
+
+    // بطاقة كريمية: شريط رسومات رفيع فوق، عنوان كبير مائل، وتحته سطر صغير
+    RectTransform PauseCard(string title, string sub, float h)
+    {
+        var card = Panel(pause, "Card", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(560, h), Paper);
+        var sh = card.gameObject.AddComponent<Shadow>();
+        sh.effectColor = new Color(0f, 0f, 0f, 0.35f);
+        sh.effectDistance = new Vector2(0, -14);
+        var band = new GameObject("Band", typeof(RectTransform), typeof(RawImage)).GetComponent<RawImage>();
+        band.rectTransform.SetParent(card, false);
+        band.rectTransform.anchorMin = new Vector2(0f, 1f); band.rectTransform.anchorMax = new Vector2(1f, 1f);
+        band.rectTransform.pivot = new Vector2(0.5f, 1f);
+        band.rectTransform.sizeDelta = new Vector2(-40, 26);
+        band.rectTransform.anchoredPosition = new Vector2(0, -20);
+        band.texture = PatternArt.Get();
+        band.uvRect = new Rect(0f, 0f, 520f / 220f, 26f / 220f);
+        band.raycastTarget = false;
+        var t = Label(card, title, 64, Pink, TextAnchor.UpperCenter);
+        t.fontStyle = FontStyle.BoldAndItalic;
+        t.rectTransform.offsetMax = new Vector2(0, -58);
+        var st = Label(card, sub, 18, new Color(0.55f, 0.5f, 0.46f), TextAnchor.UpperCenter);
+        st.fontStyle = FontStyle.Normal;
+        st.rectTransform.offsetMax = new Vector2(0, -136);
+        var line = Panel(card, "Line", new Vector2(0.5f, 1f), new Vector2(0, -168), new Vector2(440, 2), new Color(0.88f, 0.83f, 0.76f));
+        line.GetComponent<Image>().sprite = null;
+        return card;
+    }
+
+    Text Chip(RectTransform parent, Vector2 pos, string name)
+    {
+        var c = Panel(parent, "Chip", new Vector2(0.5f, 0.5f), pos, new Vector2(190, 44), new Color(1f, 0.9f, 0.93f));
+        var n = Label(c, name, 14, new Color(0.85f, 0.4f, 0.55f), TextAnchor.MiddleLeft);
+        n.rectTransform.offsetMin = new Vector2(18, 0);
+        var v = Label(c, "", 22, Ink, TextAnchor.MiddleRight);
+        v.rectTransform.offsetMax = new Vector2(-18, 0);
+        return v;
+    }
+
+    // سطر بالقائمة: أبيض بنقطة لون يسار، والأساسي (رجوع) وردي
+    RectTransform PauseRow(RectTransform card, string text, float y, bool primary, Color accent, UnityEngine.Events.UnityAction act)
+    {
+        var b = Panel(card, "Row", new Vector2(0.5f, 1f), new Vector2(0, y), new Vector2(440, 62), primary ? accent : Color.white);
+        b.pivot = new Vector2(0.5f, 1f);
+        var sh = b.gameObject.AddComponent<Shadow>();
+        sh.effectColor = new Color(0.4f, 0.3f, 0.25f, 0.12f);
+        sh.effectDistance = new Vector2(0, -4);
+        var btn = b.gameObject.AddComponent<UnityEngine.UI.Button>();
+        var cb = btn.colors;
+        cb.highlightedColor = primary ? new Color(1f, 1f, 1f) : new Color(1f, 0.93f, 0.95f);
+        cb.pressedColor = new Color(0.9f, 0.85f, 0.85f);
+        cb.fadeDuration = 0.08f;
+        btn.colors = cb;
+        btn.onClick.AddListener(act);
+        if (!primary)
+        {
+            var dot = Panel(b, "Dot", new Vector2(0f, 0.5f), new Vector2(34, 0), new Vector2(16, 16), accent);
+            dot.GetComponent<Image>().sprite = MakeRounded(32, 16);
+        }
+        var l = Label(b, text, 26, primary ? Color.white : Ink, primary ? TextAnchor.MiddleCenter : TextAnchor.MiddleLeft);
+        if (!primary) l.rectTransform.offsetMin = new Vector2(62, 0);
+        var arrow = Label(b, ">", 24, primary ? new Color(1f, 1f, 1f, 0.8f) : new Color(0.75f, 0.7f, 0.65f), TextAnchor.MiddleRight);
+        arrow.rectTransform.offsetMax = new Vector2(-24, 0);
+        return b;
+    }
+
+    void VolumeRow(RectTransform c, string name, float y, System.Func<float> get, System.Action<float> set)
+    {
+        var l = Label(c, name, 28, Ink, TextAnchor.MiddleLeft);
+        l.rectTransform.anchorMin = l.rectTransform.anchorMax = new Vector2(0f, 1f);
+        l.rectTransform.pivot = new Vector2(0f, 1f);
+        l.rectTransform.sizeDelta = new Vector2(130, 64);
+        l.rectTransform.anchoredPosition = new Vector2(60, y);
+        var barBg = Panel(c, "Bar", new Vector2(0f, 1f), new Vector2(258, y - 22), new Vector2(180, 20), new Color(0.88f, 0.83f, 0.76f));
+        barBg.pivot = new Vector2(0f, 1f);
+        var fill = Panel(barBg, "Fill", new Vector2(0f, 0.5f), Vector2.zero, new Vector2(180 * get(), 20), Pink);
+        fill.pivot = new Vector2(0f, 0.5f);
+        System.Action<float> change = d =>
+        {
+            float v = Mathf.Clamp01(Mathf.Round((get() + d) * 10f) / 10f);
+            set(v);
+            fill.sizeDelta = new Vector2(180 * v, 20);
+            KitchenAudio.Play("click");
+        };
+        var minus = Panel(c, "Minus", new Vector2(0f, 1f), new Vector2(196, y - 4), new Vector2(54, 54), Ink);
+        minus.pivot = new Vector2(0f, 1f);
+        minus.gameObject.AddComponent<UnityEngine.UI.Button>().onClick.AddListener(() => change(-0.1f));
+        Label(minus, "-", 34, Color.white, TextAnchor.MiddleCenter);
+        var plus = Panel(c, "Plus", new Vector2(0f, 1f), new Vector2(446, y - 4), new Vector2(54, 54), Ink);
+        plus.pivot = new Vector2(0f, 1f);
+        plus.gameObject.AddComponent<UnityEngine.UI.Button>().onClick.AddListener(() => change(0.1f));
+        Label(plus, "+", 34, Color.white, TextAnchor.MiddleCenter);
+    }
+
+    static void Quit()
+    {
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
     }
 
     // ---------- كتاب الوصفات (H) ----------
@@ -456,6 +643,7 @@ public class KitchenHUD : MonoBehaviour
         close.rectTransform.sizeDelta = new Vector2(600, 40);
         close.rectTransform.anchoredPosition = new Vector2(0, 30);
         book.gameObject.SetActive(false);
+        UIFonts.Apply(gameObject);
     }
 
     void BuildResults(OrderManager m)
@@ -465,7 +653,7 @@ public class KitchenHUD : MonoBehaviour
         dim.anchorMin = Vector2.zero; dim.anchorMax = Vector2.one; dim.sizeDelta = Vector2.zero;
 
         var card = Panel(dim, "Card", new Vector2(0.5f, 0.5f), Vector2.zero, new Vector2(640, 470), Paper);
-        var title = Label(card, m.Stars > 0 ? "LEVEL COMPLETE!" : "TIME'S UP!", 48, Ink, TextAnchor.MiddleCenter);
+        var title = Label(card, m.mealMode ? "MEAL COMPLETE!" : (m.Stars > 0 ? "LEVEL COMPLETE!" : "TIME'S UP!"), 48, Ink, TextAnchor.MiddleCenter);
         title.rectTransform.anchorMin = title.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         title.rectTransform.sizeDelta = new Vector2(600, 70);
         title.rectTransform.anchoredPosition = new Vector2(0, -60);
@@ -479,12 +667,16 @@ public class KitchenHUD : MonoBehaviour
             s.rectTransform.anchoredPosition = new Vector2((i - 1) * 130, i == 1 ? -170 : -180);
         }
 
-        var sc = Label(card, "SCORE  " + m.score, 40, Ink, TextAnchor.MiddleCenter);
+        System.Func<float, string> mmss = v => { int x = Mathf.CeilToInt(v); return (x / 60) + ":" + (x % 60).ToString("00"); };
+        var sc = Label(card, m.mealMode ? "TIME  " + mmss(m.elapsed) : "SCORE  " + m.score, 40, Ink, TextAnchor.MiddleCenter);
         sc.rectTransform.anchorMin = sc.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         sc.rectTransform.sizeDelta = new Vector2(600, 60);
         sc.rectTransform.anchoredPosition = new Vector2(0, -275);
 
-        var need = Label(card, "Stars at:  " + string.Join("  /  ", System.Array.ConvertAll(m.starScores, v => v.ToString())), 22, new Color(0.45f, 0.4f, 0.35f), TextAnchor.MiddleCenter);
+        string needText = m.mealMode
+            ? "3 stars under " + mmss(m.starTimes[0]) + "   ·   2 stars under " + mmss(m.starTimes[1])
+            : "Stars at:  " + string.Join("  /  ", System.Array.ConvertAll(m.starScores, v => v.ToString()));
+        var need = Label(card, needText, 22, new Color(0.45f, 0.4f, 0.35f), TextAnchor.MiddleCenter);
         need.rectTransform.anchorMin = need.rectTransform.anchorMax = new Vector2(0.5f, 1f);
         need.rectTransform.sizeDelta = new Vector2(600, 40);
         need.rectTransform.anchoredPosition = new Vector2(0, -320);
@@ -495,6 +687,7 @@ public class KitchenHUD : MonoBehaviour
         menu.rectTransform.anchorMin = menu.rectTransform.anchorMax = new Vector2(0.5f, 0f);
         menu.rectTransform.sizeDelta = new Vector2(400, 30);
         menu.rectTransform.anchoredPosition = new Vector2(0, 14);
+        UIFonts.Apply(gameObject);
     }
 
     // ---------- أدوات ----------
@@ -572,6 +765,10 @@ public class KitchenHUD : MonoBehaviour
             case Ingredient.Meat: return new Color(0.55f, 0.32f, 0.24f);
             case Ingredient.Bun: return new Color(0.8f, 0.56f, 0.3f);
             case Ingredient.Potato: return new Color(0.82f, 0.62f, 0.2f);
+            case Ingredient.Coffee: return new Color(0.45f, 0.3f, 0.2f);
+            case Ingredient.Matcha: return new Color(0.45f, 0.68f, 0.3f);
+            case Ingredient.Milk: return new Color(0.55f, 0.7f, 0.9f);
+            case Ingredient.Cereal: return new Color(0.9f, 0.65f, 0.25f);
             default: return new Color(0.95f, 0.72f, 0.1f);
         }
     }

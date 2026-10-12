@@ -50,8 +50,8 @@ public class OrderManager : MonoBehaviour
     public string speaker = "Nina";
     public string[] introCaptions =
     {
-        "Mom asked me to cook dinner for the whole family tonight!",
-        "Okay... deep breath. Let's start with fresh salads.",
+        "Mom asked me to make her something tonight!",
+        "Okay... deep breath. One dish at a time.",
         "Mom is waiting at the dining table.",
         "Tip: Each order shows its steps. Press [H] any time to open the recipe book.",
     };
@@ -68,6 +68,18 @@ public class OrderManager : MonoBehaviour
     public bool burger = false;
     public bool cheeseburger = false;
     public bool fries = false;
+
+    [Header("وجبة الأم (المرحلة ١): طلب ورا طلب، وتخلص المرحلة لما تخلص الوجبة")]
+    public bool mealMode = false;
+    public float[] starTimes = { 100f, 160f };   // تحت ١٠٠ ثانية ٣ نجوم، تحت ١٦٠ نجمتين، غير كذا نجمة
+    public string mealName;
+    readonly List<Recipe> mealQueue = new List<Recipe>();
+    public float elapsed;
+    float endT;
+
+    [Header("مجسمات الأطباق الجاهزة (Food Kit)")]
+    public string[] dishNames;
+    public GameObject[] dishModels;
 
     [Header("النقاط")]
     public int missedPenalty = 10;
@@ -88,6 +100,30 @@ public class OrderManager : MonoBehaviour
     public static readonly Recipe Fries = new Recipe("FRIES", 25, Ingredient.Potato);
     public static readonly Recipe CheeseSalad = new Recipe("CHEESE SALAD", 30, Ingredient.Lettuce, Ingredient.Tomato, Ingredient.Cheese);
     public static readonly Recipe Sandwich = new Recipe("SANDWICH", 30, Ingredient.Bun, Ingredient.Cheese, Ingredient.Tomato);
+    public static readonly Recipe Coffee = new Recipe("COFFEE", 20, Ingredient.Coffee);
+    public static readonly Recipe MatchaLatte = new Recipe("MATCHA LATTE", 30, Ingredient.Matcha, Ingredient.Milk);
+    public static readonly Recipe Cornflakes = new Recipe("CORNFLAKES", 20, Ingredient.Cereal, Ingredient.Milk);
+
+    public static readonly Recipe[] All = { Salad, CheeseSalad, Sandwich, Burger, Cheeseburger, Fries, Coffee, MatchaLatte, Cornflakes };
+    public Recipe[] AllRecipes { get { return All; } }
+
+    // وجبات الأم: كل مرة تدخلين المرحلة تطلب وحدة غير
+    static readonly string[] MealNames = { "Coffee & Cereal", "Matcha Night", "Fresh Greens", "Cozy Dinner" };
+    static readonly Recipe[][] Meals =
+    {
+        new[] { Coffee, Cornflakes },
+        new[] { MatchaLatte, Sandwich },
+        new[] { Salad, CheeseSalad },
+        new[] { Sandwich, Salad, Coffee },
+    };
+
+    public GameObject DishModel(string recipeName)
+    {
+        if (dishNames == null || dishModels == null) return null;
+        for (int i = 0; i < dishNames.Length && i < dishModels.Length; i++)
+            if (dishNames[i] == recipeName) return dishModels[i];
+        return null;
+    }
 
     public List<Recipe> Menu { get { return menu; } }
 
@@ -106,6 +142,25 @@ public class OrderManager : MonoBehaviour
         if (cheeseburger) menu.Add(Cheeseburger);
         if (fries) menu.Add(Fries);
         if (menu.Count == 0) menu.Add(Salad);
+        if (mealMode)
+        {
+            // نختار وجبة غير الأخيرة
+            int last = PlayerPrefs.GetInt("LastMeal", -1);
+            int pick = Random.Range(0, Meals.Length);
+            if (Meals.Length > 1 && pick == last) pick = (pick + 1) % Meals.Length;
+            PlayerPrefs.SetInt("LastMeal", pick);
+            mealName = MealNames[pick];
+            mealQueue.AddRange(Meals[pick]);
+            menu.Clear();
+            foreach (var r in mealQueue) if (!menu.Contains(r)) menu.Add(r);
+            var names = new List<string>();
+            foreach (var r in mealQueue) names.Add(Nice(r.name));
+            string list = names.Count > 1 ? string.Join(", ", names.GetRange(0, names.Count - 1).ToArray()) + " and " + names[names.Count - 1] : names[0];
+            var lines = new List<string>(introCaptions);
+            lines.Insert(Mathf.Min(2, lines.Count), "Tonight Mom wants: " + list + ".");
+            introCaptions = lines.ToArray();
+            levelTitle = levelTitle + "  ·  " + mealName.ToUpper();
+        }
         timeLeft = levelTime;
         spawnT = firstOrderDelay;
         KitchenHUD.Ensure(this);
@@ -121,6 +176,14 @@ public class OrderManager : MonoBehaviour
     void Update()
     {
         var k = Keyboard.current;
+        // Esc: قائمة الإيقاف (أو يسكر كتاب الوصفات لو مفتوح)
+        if (!ended && !KitchenHUD.CardOpen && k != null && k.escapeKey.wasPressedThisFrame)
+        {
+            if (KitchenHUD.BookOpen) KitchenHUD.ToggleBook(this);
+            else KitchenHUD.TogglePause(this);
+            return;
+        }
+        if (KitchenHUD.Paused) return;
         if (!ended && !KitchenHUD.CardOpen && k != null && k.hKey.wasPressedThisFrame) KitchenHUD.ToggleBook(this);
         if (KitchenHUD.BookOpen || KitchenHUD.CardOpen) return;
         if (ended)
@@ -139,6 +202,7 @@ public class OrderManager : MonoBehaviour
         }
 
         float dt = Time.deltaTime;
+        if (mealMode) { UpdateMeal(dt); return; }
         timeLeft -= dt;
         if (!saidHurry && timeLeft < 30f) { saidHurry = true; KitchenHUD.Caption(speaker, hurryLine, 1.8f); }
         if (timeLeft <= 0f) { timeLeft = 0f; End(); return; }
@@ -170,12 +234,43 @@ public class OrderManager : MonoBehaviour
         }
     }
 
-    public bool Deliver(Plate p)
+    // وجبة الأم: طلب واحد بالمرة، بدون وقت ينتهي. تخلص المرحلة لما تخلص الوجبة
+    void UpdateMeal(float dt)
+    {
+        elapsed += dt;
+        timeLeft = elapsed;   // الساعة فوق تعد لقدام
+        if (orders.Count == 0)
+        {
+            if (mealQueue.Count == 0) { endT += dt; if (endT > 2.2f) End(); return; }
+            spawnT -= dt;
+            if (spawnT <= 0f)
+            {
+                var r = mealQueue[0];
+                mealQueue.RemoveAt(0);
+                orders.Add(new Order { recipe = r, timeLeft = 1f, patience = 1f });
+                KitchenAudio.Play("ding", 0.5f);
+                spawnT = nextOrderDelay;
+            }
+        }
+    }
+
+    static string Nice(string n)
+    {
+        n = n.ToLower();
+        return char.ToUpper(n[0]) + n.Substring(1);
+    }
+
+    public int MealLeft { get { return mealQueue.Count + orders.Count; } }
+
+    public bool Deliver(Plate p) { return Deliver(r => p.Matches(r)); }
+    public bool DeliverDrink(KitchenItem d) { return Deliver(r => d.MatchesDrink(r)); }
+
+    bool Deliver(System.Func<Recipe, bool> match)
     {
         if (ended) return false;
         foreach (var o in orders)
         {
-            if (!p.Matches(o.recipe)) continue;
+            if (!match(o.recipe)) continue;
             int bonus = Mathf.CeilToInt(maxSpeedBonus * Mathf.Clamp01(o.timeLeft / o.patience));
             int gain = o.recipe.points + bonus;
             score += gain;
@@ -184,15 +279,26 @@ public class OrderManager : MonoBehaviour
             KitchenAudio.Play("serve");
             if (!saidFirst) { saidFirst = true; KitchenHUD.Caption(speaker, firstServeLine, 1.8f); }
             spawnT = Mathf.Min(spawnT, 2f);
+            if (mealMode && MealLeft > 0) KitchenHUD.Caption("Mom", Thanks[Random.Range(0, Thanks.Length)], 1.6f);
+            if (mealMode && MealLeft == 0) KitchenHUD.Caption("Mom", "Everything was perfect, Nina! I'm so proud of you!", 2.2f);
             return true;
         }
         return false;
     }
 
+    static readonly string[] Thanks = { "Mmm, that's delicious!", "Just how I like it!", "Thank you, sweetie!" };
+
     public int Stars
     {
         get
         {
+            if (mealMode)
+            {
+                if (!ended && MealLeft > 0) return 0;
+                int st = 1;
+                foreach (var t in starTimes) if (elapsed <= t) st++;
+                return Mathf.Min(3, st);
+            }
             int s = 0;
             foreach (var t in starScores) if (score >= t) s++;
             return s;

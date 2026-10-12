@@ -4,7 +4,7 @@ using UnityEngine;
 // KitchenItem: أي شي ينشال باليد (خس، طماطم، لحم ...)
 // ItemFactory: يسوي المكوّن لما تاخذينه من الصندوق
 // ==========================================================
-public enum Ingredient { Lettuce, Tomato, Meat, Bun, Potato, Cheese }
+public enum Ingredient { Lettuce, Tomato, Meat, Bun, Potato, Cheese, Coffee, Matcha, Milk, Cereal }
 
 public class KitchenItem : MonoBehaviour
 {
@@ -12,6 +12,48 @@ public class KitchenItem : MonoBehaviour
     public bool chopped;
     public bool cooked;
     public bool burnt;
+    public GameObject processedPrefab;   // شكله بعد التقطيع/التحضير/الطبخ (من Food Kit)
+    public bool milk;                    // انحط فيه حليب (ماتشا لاتيه / كورن فليكس)
+
+    // المشروبات والكورن فليكس ما تنحط في صحن، تتسلم على طول
+    public bool IsDrink { get { return ingredient == Ingredient.Coffee || ingredient == Ingredient.Matcha || ingredient == Ingredient.Milk || ingredient == Ingredient.Cereal; } }
+
+    // يقبل حليب؟ (ماتشا بعد ما تنخفق، أو الكورن فليكس)
+    public bool CanTakeMilk { get { return !milk && ((ingredient == Ingredient.Matcha && chopped) || ingredient == Ingredient.Cereal); } }
+
+    // جاهز يتسلم بدون صحن
+    public bool Servable
+    {
+        get
+        {
+            if (ingredient == Ingredient.Coffee) return chopped;
+            if (ingredient == Ingredient.Matcha) return chopped;
+            if (ingredient == Ingredient.Cereal) return milk;
+            return false;
+        }
+    }
+
+    public void AddMilk()
+    {
+        if (!CanTakeMilk) return;
+        milk = true;
+        if (ingredient == Ingredient.Cereal) SwapModel(processedPrefab, 0.36f);
+        else if (ingredient == Ingredient.Matcha) Tint(new Color(0.85f, 1f, 0.72f));   // أفتح: لاتيه
+    }
+
+    // يطابق طلب؟ (المشروب نفسه + الحليب لو فيه)
+    public bool MatchesDrink(Recipe r)
+    {
+        if (r == null || r.parts == null || !Servable) return false;
+        int n = milk ? 2 : 1;
+        if (r.parts.Length != n) return false;
+        foreach (var p in r.parts)
+            if (p != ingredient && !(milk && p == Ingredient.Milk)) return false;
+        return true;
+    }
+
+    // تنحضر بالمكينة (Space): قهوة وماتشا
+    public bool Brewable { get { return ingredient == Ingredient.Coffee || ingredient == Ingredient.Matcha; } }
 
     public bool Choppable
     {
@@ -28,6 +70,8 @@ public class KitchenItem : MonoBehaviour
             {
                 case Ingredient.Meat: return cooked;
                 case Ingredient.Bun: return true;
+                case Ingredient.Milk: return true;
+                case Ingredient.Cereal: return true;
                 case Ingredient.Potato: return chopped && cooked;
                 default: return chopped;
             }
@@ -71,10 +115,44 @@ public class KitchenItem : MonoBehaviour
     }
 
     // يتقطع: الشكل يصير ثلاث قطع صغيرة
+    // يبدل الشكل بمجسم ثاني بنفس الحجم تقريباً
+    public bool SwapModel(GameObject prefab, float size = 0.36f)
+    {
+        if (prefab == null || transform.childCount == 0) return false;
+        var old = transform.GetChild(0);
+        var m = Instantiate(prefab);
+        m.name = "Model";
+        foreach (var c in m.GetComponentsInChildren<Collider>()) Destroy(c);
+        m.transform.SetParent(transform, false);
+        m.transform.localPosition = Vector3.zero;
+        m.transform.localRotation = Quaternion.identity;
+        old.gameObject.SetActive(false);
+        Destroy(old.gameObject);
+        var rs = m.GetComponentsInChildren<Renderer>();
+        if (rs.Length > 0)
+        {
+            Bounds b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            float max = Mathf.Max(b.size.x, Mathf.Max(b.size.y, b.size.z));
+            if (max > 0.0001f) m.transform.localScale *= size / max;
+            b = rs[0].bounds;
+            foreach (var r in rs) b.Encapsulate(r.bounds);
+            m.transform.position -= new Vector3(b.center.x - transform.position.x, b.min.y - transform.position.y, b.center.z - transform.position.z);
+        }
+        baseCols = null;
+        return true;
+    }
+
     public void SetChopped()
     {
         if (chopped) return;
         chopped = true;
+        // لو عندنا شكل جاهز (طماطم مقطعة، جبن مقطع، قهوة، ماتشا) نستخدمه
+        if (processedPrefab != null && SwapModel(processedPrefab))
+        {
+            if (ingredient == Ingredient.Matcha) Tint(new Color(0.6f, 1f, 0.45f));
+            return;
+        }
         if (transform.childCount == 0) return;
         Transform v = transform.GetChild(0);
         Vector3[] offs = { new Vector3(-0.09f, 0f, 0.02f), new Vector3(0.09f, 0f, 0.05f), new Vector3(0.01f, 0f, -0.09f) };
@@ -94,7 +172,7 @@ public class KitchenItem : MonoBehaviour
 public static class ItemFactory
 {
     // prefab: مجسم الأكل من Food Kit (لو موجود)، وإذا مو موجود يسوي شكل بسيط
-    public static KitchenItem Create(Ingredient ing, Material mat, GameObject prefab = null)
+    public static KitchenItem Create(Ingredient ing, Material mat, GameObject prefab = null, GameObject processed = null)
     {
         var go = new GameObject("Item_" + ing);
         GameObject model;
@@ -114,6 +192,10 @@ public static class ItemFactory
                 case Ingredient.Bun:     shape = PrimitiveType.Cylinder; size = new Vector3(0.42f, 0.07f, 0.42f); break;
                 case Ingredient.Potato:  shape = PrimitiveType.Sphere;   size = new Vector3(0.30f, 0.24f, 0.40f); break;
                 case Ingredient.Cheese:  shape = PrimitiveType.Cube;     size = new Vector3(0.36f, 0.08f, 0.36f); break;
+                case Ingredient.Coffee:  shape = PrimitiveType.Cylinder; size = new Vector3(0.22f, 0.12f, 0.22f); break;
+                case Ingredient.Matcha:  shape = PrimitiveType.Cylinder; size = new Vector3(0.22f, 0.12f, 0.22f); break;
+                case Ingredient.Milk:    shape = PrimitiveType.Cube;     size = new Vector3(0.18f, 0.32f, 0.18f); break;
+                case Ingredient.Cereal:  shape = PrimitiveType.Cube;     size = new Vector3(0.26f, 0.34f, 0.1f); break;
             }
             model = GameObject.CreatePrimitive(shape);
             model.transform.localScale = size;
@@ -126,6 +208,7 @@ public static class ItemFactory
 
         var item = go.AddComponent<KitchenItem>();
         item.ingredient = ing;
+        item.processedPrefab = processed;
 
         Bounds b;
         if (prefab != null && item.GetBounds(out b))
